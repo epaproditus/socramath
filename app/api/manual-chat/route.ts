@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'edge';
+import { auth } from "@/auth";
 
 export async function POST(req: Request) {
+    const session = await auth();
+    if (!session || !session.user) {
+        return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     try {
         const body = await req.json();
         const apiKey = process.env.DEEPSEEK_API_KEY;

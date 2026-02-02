@@ -2,6 +2,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, tool } from "ai";
 import { z } from "zod";
 
+import { auth } from "@/auth";
+
 // Create a custom OpenAI provider instance pointing to DeepSeek
 const deepseekProvider = createOpenAI({
   baseURL: "https://api.deepseek.com",
@@ -9,6 +11,11 @@ const deepseekProvider = createOpenAI({
 });
 
 export async function POST(req: Request) {
+  const session = await auth();
+  if (!session || !session.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = await req.json();
   const { messages } = body;
 

@@ -10,6 +10,10 @@ export type Question = {
 export type TestSession = {
     id: string;
     title: string;
+    studentProfile?: {
+        name: string | null;
+        classPeriod: string | null;
+    } | null;
     questions: Question[];
 };
 

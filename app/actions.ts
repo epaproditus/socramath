@@ -8,21 +8,33 @@ const prisma = new PrismaClient();
 
 export async function fetchUserSession() {
     const session = await auth();
-    if (!session?.user?.id) return null;
+    const adminEmail = process.env.ADMIN_EMAIL;
 
-    const userId = session.user.id;
+    // 1. Find the Admin User in our DB
+    const adminUser = adminEmail ? await prisma.user.findUnique({
+        where: { email: adminEmail }
+    }) : null;
 
-    // 1. Try to find existing session
+    // 2. Identify whose session we are looking for
+    // If not logged in, or if logged in as anyone else, we prefer the Admin's session
+    const targetUserId = adminUser?.id;
+
+    if (!targetUserId) {
+        console.log("No admin user found in DB yet. Admin needs to log in first.");
+        return null;
+    }
+
+    // 3. Fetch the latest session for the Admin
     let dbSession = await prisma.testSession.findFirst({
-        where: { userId },
+        where: { userId: targetUserId },
         include: { questions: { orderBy: { orderIndex: 'asc' } } }
     });
 
-    // 2. If no session, create one with default data
-    if (!dbSession) {
+    // 4. Fallback: If current user is Admin and no session exists, create it
+    if (!dbSession && session?.user?.email === adminEmail) {
         dbSession = await prisma.testSession.create({
             data: {
-                userId,
+                userId: targetUserId,
                 title: "AP Calculus AB - Unit 4 Test Corrections",
                 questions: {
                     create: MATH_TEST_SESSION.questions.map((q: any, i: number) => ({
@@ -38,11 +50,28 @@ export async function fetchUserSession() {
         });
     }
 
-    // 3. Transform to App Format
+    if (!dbSession) return null;
+
+    // 6. Fetch Student Profile for personalization
+    let studentProfile = null;
+    if (session?.user?.email && session.user.email !== adminEmail) {
+        const dbUser = await prisma.user.findUnique({
+            where: { email: session.user.email }
+        });
+        if (dbUser) {
+            studentProfile = {
+                name: dbUser.name,
+                classPeriod: dbUser.classPeriod
+            };
+        }
+    }
+
+    // 7. Transform to App Format
     return {
         id: dbSession.id,
         title: dbSession.title,
-        questions: dbSession.questions.map(q => ({
+        studentProfile,
+        questions: dbSession.questions.map((q: any) => ({
             id: q.id,
             text: q.text,
             student_response: q.studentResponse,

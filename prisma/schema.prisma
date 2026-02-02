@@ -19,6 +19,8 @@ model User {
   sessions      Session[]
   
   // App Relations
+  role          String?   @default("student")
+  classPeriod   String?
   testSessions  TestSession[]
 }
 

@@ -102,6 +102,7 @@ export default function Home() {
 
         SESSION DATA:
         Title: ${currentSession.title}
+        Student Name: ${currentSession.studentProfile?.name || "Student"}
         Questions: ${JSON.stringify(currentSession.questions)}
         `
       };
