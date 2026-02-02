@@ -7,9 +7,10 @@ import { Link2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useEffect } from "react";
 import { SignIn } from "@/components/SignIn";
+import { QuestionSidebar } from "@/components/QuestionSidebar";
 
 export default function Home() {
-  const { currentSession, initialize } = useAppStore();
+  const { currentSession, initialize, studentResponses, sidebarOpen, sidebarWidth, setSidebarWidth, activeQuestionId } = useAppStore();
   const sessionRef = useRef(currentSession);
 
   useEffect(() => {
@@ -84,26 +85,49 @@ export default function Home() {
         }];
       });
 
+      const responseMap = studentResponses || {};
+      const activeResponse = activeQuestionId ? responseMap[activeQuestionId] : null;
+      const reviewComplete = !!(
+        activeResponse?.difficulty &&
+        activeResponse?.initialReasoning &&
+        activeResponse?.confidence &&
+        activeResponse?.revisedAnswer
+      );
+
       // System Prompt - NOW DYNAMIC FROM STORE
       const systemMessage = {
         role: "system",
-        content: `You are a Socratic Tutor conducting a "Test Correction" interview.
+        content: `You are a Socratic Test Review Coach.
+
+        CONTEXT:
+        - The student already completed a structured review card for each question (difficulty, initial reasoning, confidence, revised answer).
+        - Your job is to deepen their understanding, not to collect those fields again.
 
         INSTRUCTIONS:
-        1. Context: The student took a test and got some questions wrong.
-        2. Goal: Review each question one by one. Guide the student to find their own mistake.
-        3. STARTING: Call 'display_question' for Question 1 (index 1).
-        4. Loop:
-           - Display Question using 'display_question'.
-           - Ask student to explain their thought process.
-           - Use the Rubric to guide them.
-           - When they get it right, say "Great job!" and move to the next question.
-           - If done, wrap up.
+        1. STARTING: Call 'display_question' for Question 1 (index 1).
+        2. For the active question:
+           - Assume you can see the student's review card responses.
+           - Do NOT ask for their original answer, difficulty, or confidence.
+           - If the review is incomplete, gently direct the student to finish the review card before continuing.
+           - If the review is complete, sanity-check their revised answer against the rubric:
+             - If it already matches, explicitly say it's correct and explain why in 1-2 sentences, then move on.
+             - If it doesn't, ask one focused question that targets the misconception.
+           - Use the rubric to guide them.
+           - Encourage them to refine their revised answer only if it is not correct.
+        3. When they demonstrate understanding, say "Great job!" and move to the next question.
+        4. Keep messages concise and focused.
 
         SESSION DATA:
         Title: ${currentSession.title}
         Student Name: ${currentSession.studentProfile?.name || "Student"}
         Questions: ${JSON.stringify(currentSession.questions)}
+        Active Question Id: ${activeQuestionId || "none"}
+        Active Review Complete: ${reviewComplete}
+        Active Review Response:
+        ${JSON.stringify(activeResponse || null)}
+
+        All Student Review Responses (keyed by question id):
+        ${JSON.stringify(responseMap)}
         `
       };
       const payload = {
@@ -267,9 +291,47 @@ export default function Home() {
         </div>
       </header>
 
-      <AssistantRuntimeProvider runtime={runtime}>
-        <Thread />
-      </AssistantRuntimeProvider>
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row pt-12">
+        <div className="flex-1 min-w-0">
+          <AssistantRuntimeProvider runtime={runtime}>
+            <Thread />
+          </AssistantRuntimeProvider>
+        </div>
+        <aside
+          className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
+          style={sidebarOpen ? { width: sidebarWidth } : undefined}
+        >
+          {sidebarOpen && (
+            <div className="relative h-full">
+              <div
+                className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
+                onMouseDown={(e) => {
+                  const startX = e.clientX;
+                  const startWidth = sidebarWidth;
+
+                  const onMove = (ev: MouseEvent) => {
+                    const delta = startX - ev.clientX;
+                    const next = Math.min(720, Math.max(360, startWidth + delta));
+                    setSidebarWidth(next);
+                  };
+
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }}
+                title="Drag to resize"
+              />
+              <div className="p-4 lg:p-6">
+                <QuestionSidebar />
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
 
       {/* Teacher Mode Toggle */}
       <Link href="/teacher" className="fixed bottom-4 left-4 p-3 bg-zinc-100 dark:bg-zinc-900 rounded-full shadow-lg hover:scale-110 transition-transform text-zinc-500 hover:text-indigo-600 z-50">

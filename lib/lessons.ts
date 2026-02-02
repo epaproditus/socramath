@@ -15,6 +15,17 @@ export type TestSession = {
         classPeriod: string | null;
     } | null;
     questions: Question[];
+    studentResponses?: Record<string, StudentResponse>;
+};
+
+export type StudentResponse = {
+    id: string;
+    questionId: string;
+    initialReasoning?: string | null;
+    difficulty?: number | null;
+    confidence?: number | null;
+    revisedAnswer?: string | null;
+    summary?: string | null;
 };
 
 export const MATH_TEST_SESSION: TestSession = {

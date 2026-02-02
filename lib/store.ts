@@ -1,14 +1,24 @@
 import { create } from 'zustand';
-import { TestSession, MATH_TEST_SESSION, Question } from './lessons';
+import { TestSession, MATH_TEST_SESSION, Question, StudentResponse } from './lessons';
 import { fetchUserSession, addQuestionAction, updateQuestionAction, removeQuestionAction } from '@/app/actions';
 
 type AppState = {
     mode: 'student' | 'teacher';
     currentSession: TestSession;
     isLoading: boolean;
+    activeQuestionId: string | null;
+    tutorUnlocked: boolean;
+    studentResponses: Record<string, StudentResponse>;
+    sidebarOpen: boolean;
+    sidebarWidth: number;
     setMode: (mode: 'student' | 'teacher') => void;
     setSession: (session: TestSession) => void;
     updateSessionTitle: (title: string) => void;
+    setActiveQuestionId: (id: string | null) => void;
+    setTutorUnlocked: (unlocked: boolean) => void;
+    setStudentResponse: (questionId: string, response: StudentResponse) => void;
+    setSidebarOpen: (open: boolean) => void;
+    setSidebarWidth: (width: number) => void;
     // Async Actions
     initialize: () => Promise<void>;
     addQuestion: () => Promise<void>;
@@ -20,16 +30,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     mode: 'student',
     currentSession: MATH_TEST_SESSION, // Fallback
     isLoading: true,
+    activeQuestionId: null,
+    tutorUnlocked: false,
+    studentResponses: {},
+    sidebarOpen: false,
+    sidebarWidth: 520,
     setMode: (mode) => set({ mode }),
     setSession: (session) => set({ currentSession: session }),
     updateSessionTitle: (title) => set((state) => ({ currentSession: { ...state.currentSession, title } })),
+    setActiveQuestionId: (id) => set({ activeQuestionId: id }),
+    setTutorUnlocked: (unlocked) => set({ tutorUnlocked: unlocked }),
+    setStudentResponse: (questionId, response) =>
+        set((state) => ({
+            studentResponses: { ...state.studentResponses, [questionId]: response }
+        })),
+    setSidebarOpen: (open) => set({ sidebarOpen: open }),
+    setSidebarWidth: (width) => set({ sidebarWidth: width }),
 
     initialize: async () => {
         try {
             const sessionData = await fetchUserSession();
             if (sessionData) {
                 // @ts-ignore - Types might mismatch slightly on optional fields, acceptable for now
-                set({ currentSession: sessionData, isLoading: false });
+                set({
+                    currentSession: sessionData,
+                    studentResponses: sessionData.studentResponses || {},
+                    isLoading: false
+                });
             } else {
                 console.log("No user session found (not logged in), keeping mock data");
                 set({ isLoading: false });

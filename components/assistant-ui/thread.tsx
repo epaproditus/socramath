@@ -8,7 +8,7 @@ import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { QuestionCard } from "@/components/QuestionCard";
+import { QuestionTrigger } from "@/components/QuestionTrigger";
 import { HintStack } from "@/components/HintStack";
 import {
   ActionBarMorePrimitive,
@@ -35,18 +35,21 @@ import {
   SquareIcon,
 } from "lucide-react";
 import type { FC } from "react";
+import { useAppStore } from "@/lib/store";
 
 export const Thread: FC = () => {
+  const { tutorUnlocked, activeQuestionId } = useAppStore();
+
   return (
     <ThreadPrimitive.Root
-      className="aui-root aui-thread-root @container flex h-full flex-col bg-background"
+      className="aui-root aui-thread-root @container flex h-full min-h-0 flex-col bg-background"
       style={{
         ["--thread-max-width" as string]: "44rem",
       }}
     >
       <ThreadPrimitive.Viewport
         turnAnchor="top"
-        className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
+        className="aui-thread-viewport relative flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
       >
         <AuiIf condition={({ thread }) => thread.isEmpty}>
           <ThreadWelcome />
@@ -60,7 +63,7 @@ export const Thread: FC = () => {
           }}
         />
 
-        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible rounded-t-3xl pb-4 md:pb-6">
+        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto flex w-full max-w-(--thread-max-width) flex-col gap-3 overflow-visible rounded-t-3xl pb-4 md:pb-6">
           <ThreadScrollToBottom />
           <Composer />
         </ThreadPrimitive.ViewportFooter>
@@ -142,6 +145,7 @@ const Composer: FC = () => {
           placeholder="Send a message..."
           className="aui-composer-input mb-1 max-h-32 min-h-14 w-full resize-none bg-transparent px-4 pt-2 pb-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-0"
           rows={1}
+          suppressHydrationWarning
           autoFocus
           aria-label="Message input"
         />
@@ -149,6 +153,10 @@ const Composer: FC = () => {
       </ComposerPrimitive.AttachmentDropzone>
     </ComposerPrimitive.Root>
   );
+};
+
+const TutorLockedNotice: FC = () => {
+  return null;
 };
 
 const ComposerAction: FC = () => {
@@ -210,7 +218,7 @@ const AssistantMessage: FC = () => {
             tools: {
               Fallback: ToolFallback,
               by_name: {
-                display_question: QuestionCard,
+                display_question: QuestionTrigger,
                 display_hints: HintStack,
               },
             },

@@ -52,6 +52,29 @@ export async function fetchUserSession() {
 
     if (!dbSession) return null;
 
+    let studentResponses: Record<string, any> = {};
+    if (session?.user?.id) {
+        const responses = await prisma.studentResponse.findMany({
+            where: {
+                userId: session.user.id,
+                sessionId: dbSession.id
+            }
+        });
+
+        studentResponses = responses.reduce((acc: Record<string, any>, r) => {
+            acc[r.questionId] = {
+                id: r.id,
+                questionId: r.questionId,
+                initialReasoning: r.initialReasoning,
+                difficulty: r.difficulty,
+                confidence: r.confidence,
+                revisedAnswer: r.revisedAnswer,
+                summary: r.summary
+            };
+            return acc;
+        }, {});
+    }
+
     // 6. Fetch Student Profile for personalization
     let studentProfile = null;
     if (session?.user?.email && session.user.email !== adminEmail) {
@@ -78,7 +101,8 @@ export async function fetchUserSession() {
             image_url: q.imageUrl || undefined,
             rubric: JSON.parse(q.rubric || "[]"),
             vocabulary: JSON.parse(q.vocabulary || "[]"),
-        }))
+        })),
+        studentResponses
     };
 }
 
