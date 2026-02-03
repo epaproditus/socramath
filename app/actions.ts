@@ -66,6 +66,7 @@ export async function fetchUserSession() {
                 id: r.id,
                 questionId: r.questionId,
                 initialReasoning: r.initialReasoning,
+                originalAnswer: r.originalAnswer,
                 difficulty: r.difficulty,
                 confidence: r.confidence,
                 revisedAnswer: r.revisedAnswer,
@@ -103,6 +104,281 @@ export async function fetchUserSession() {
             vocabulary: JSON.parse(q.vocabulary || "[]"),
         })),
         studentResponses
+    };
+}
+
+export async function createSessionAction(title?: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const created = await prisma.testSession.create({
+        data: {
+            userId: targetUserId,
+            title: title?.trim() || "New Session",
+        },
+        include: { questions: { orderBy: { orderIndex: "asc" } } },
+    });
+
+    return {
+        id: created.id,
+        title: created.title,
+        studentProfile: null,
+        questions: created.questions.map((q: any) => ({
+            id: q.id,
+            text: q.text,
+            student_response: q.studentResponse,
+            image_url: q.imageUrl || undefined,
+            rubric: JSON.parse(q.rubric || "[]"),
+            vocabulary: JSON.parse(q.vocabulary || "[]"),
+        })),
+        studentResponses: {},
+    };
+}
+
+export async function fetchSessionsList() {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const sessions = await prisma.testSession.findMany({
+        where: { userId: targetUserId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, title: true, createdAt: true },
+    });
+
+    return sessions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        createdAt: s.createdAt,
+    }));
+}
+
+export async function fetchSessionById(sessionId: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const dbSession = await prisma.testSession.findFirst({
+        where: { id: sessionId, userId: targetUserId },
+        include: { questions: { orderBy: { orderIndex: "asc" } } },
+    });
+
+    if (!dbSession) {
+        throw new Error("Session not found");
+    }
+
+    return {
+        id: dbSession.id,
+        title: dbSession.title,
+        studentProfile: null,
+        questions: dbSession.questions.map((q: any) => ({
+            id: q.id,
+            text: q.text,
+            student_response: q.studentResponse,
+            image_url: q.imageUrl || undefined,
+            rubric: JSON.parse(q.rubric || "[]"),
+            vocabulary: JSON.parse(q.vocabulary || "[]"),
+        })),
+        studentResponses: {},
+    };
+}
+
+export async function fetchSessionStudentSummary(sessionId: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const dbSession = await prisma.testSession.findFirst({
+        where: { id: sessionId, userId: targetUserId },
+        select: { id: true },
+    });
+
+    if (!dbSession) {
+        throw new Error("Session not found");
+    }
+
+    const totalQuestions = await prisma.question.count({
+        where: { sessionId },
+    });
+
+    const responseCounts = await prisma.studentResponse.groupBy({
+        by: ["userId"],
+        where: { sessionId },
+        _count: { _all: true },
+    });
+
+    const userIds = responseCounts.map((r) => r.userId);
+    const users = await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, name: true, email: true, localId: true },
+    });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const students = responseCounts
+        .map((r) => {
+            const user = userById.get(r.userId);
+            const answerCount = r._count._all;
+            return {
+                id: r.userId,
+                name: user?.name || "Unknown",
+                email: user?.email || null,
+                localId: user?.localId || null,
+                answers: answerCount,
+                missing: Math.max(totalQuestions - answerCount, 0),
+            };
+        })
+        .sort((a, b) => b.answers - a.answers);
+
+    return {
+        totalQuestions,
+        students,
+    };
+}
+
+function normalizeAnswer(value: string | null | undefined) {
+    if (!value) return "";
+    return value
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[^\w.\-+/= ]/g, "")
+        .trim();
+}
+
+export async function fetchSessionAnswerMatrix(sessionId: string) {
+    const session = await auth();
+    if (!session?.user?.id) {
+        throw new Error("Unauthorized");
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session.user.id;
+
+    const dbSession = await prisma.testSession.findFirst({
+        where: { id: sessionId, userId: targetUserId },
+        include: { questions: { orderBy: { orderIndex: "asc" } } },
+    });
+
+    if (!dbSession) {
+        throw new Error("Session not found");
+    }
+
+    const responses = await prisma.studentResponse.findMany({
+        where: { sessionId },
+        include: { user: true },
+    });
+
+    const keyUserId = session.user.id;
+    const keyByQuestionId = new Map<string, string>();
+    responses
+        .filter((r) => r.userId === keyUserId)
+        .forEach((r) => {
+            keyByQuestionId.set(r.questionId, r.originalAnswer || "");
+        });
+
+    const students = responses
+        .filter((r) => r.userId !== keyUserId)
+        .reduce((acc: Record<string, any>, r) => {
+            const user = r.user;
+            const entry = acc[user.id] || {
+                id: user.id,
+                name: user.name || "Unknown",
+                classPeriod: user.classPeriod || "Unassigned",
+                localId: user.localId || null,
+                answers: {},
+            };
+            entry.answers[r.questionId] = r.originalAnswer || "";
+            acc[user.id] = entry;
+            return acc;
+        }, {});
+
+    const classGroups: Record<string, any[]> = {};
+    Object.values(students).forEach((s: any) => {
+        if (!classGroups[s.classPeriod]) classGroups[s.classPeriod] = [];
+        classGroups[s.classPeriod].push(s);
+    });
+
+    const questions = dbSession.questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        key: keyByQuestionId.get(q.id) || "",
+    }));
+
+    const grouped = Object.entries(classGroups).map(([classPeriod, studentList]) => {
+        const byQuestion = questions.map((q) => {
+            const correct: string[] = [];
+            const incorrect: string[] = [];
+            const missing: string[] = [];
+            studentList.forEach((s: any) => {
+                const raw = s.answers[q.id] || "";
+                if (!raw) {
+                    missing.push(s.name);
+                    return;
+                }
+                if (normalizeAnswer(raw) === normalizeAnswer(q.key)) {
+                    correct.push(s.name);
+                } else {
+                    incorrect.push(s.name);
+                }
+            });
+            return {
+                questionId: q.id,
+                text: q.text,
+                key: q.key,
+                correct,
+                incorrect,
+                missing,
+            };
+        });
+        return {
+            classPeriod,
+            questions: byQuestion,
+        };
+    });
+
+    return {
+        questions,
+        groups: grouped,
     };
 }
 

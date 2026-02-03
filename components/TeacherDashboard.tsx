@@ -1,17 +1,46 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
-import { ArrowLeft, Sparkles, Plus, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix } from "@/app/actions";
+import { ArrowLeft, Sparkles, Plus, Trash2, Upload, CheckCircle2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function TeacherDashboard() {
     const router = useRouter();
-    const { currentSession, updateSessionTitle, updateQuestion, addQuestion, removeQuestion, setMode } = useAppStore();
+    const { currentSession, updateSessionTitle, updateQuestion, addQuestion, removeQuestion, setMode, setSession, createSession } = useAppStore();
 
     const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
     const activeQuestion = currentSession.questions[activeQuestionIndex];
+    const [answerMatrix, setAnswerMatrix] = useState<{
+        questions: { id: string; text: string; key: string }[];
+        groups: { classPeriod: string; questions: { questionId: string; text: string; key: string; correct: string[]; incorrect: string[]; missing: string[] }[] }[];
+    } | null>(null);
+    const [answerMatrixLoading, setAnswerMatrixLoading] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [previewRows, setPreviewRows] = useState<any[]>([]);
+    const [previewMapping, setPreviewMapping] = useState<any | null>(null);
+    const [previewMode, setPreviewMode] = useState<"question_rows" | "student_rows" | null>(null);
+    const [importStats, setImportStats] = useState<{ studentCount?: number; questionCount?: number } | null>(null);
+    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    const [createNewSession, setCreateNewSession] = useState(true);
+    const [sessionTitle, setSessionTitle] = useState("");
+    const [importError, setImportError] = useState<string | null>(null);
+    const [importWarnings, setImportWarnings] = useState<string[]>([]);
+    const [lastImportSummary, setLastImportSummary] = useState<{
+        sessionTitle?: string;
+        importedStudents?: number;
+        importedResponses?: number;
+        skippedStudents?: number;
+    } | null>(null);
+    const [sessions, setSessions] = useState<{ id: string; title: string; createdAt: string }[]>([]);
+    const [sessionLoading, setSessionLoading] = useState(false);
+    const [studentSummary, setStudentSummary] = useState<{
+        totalQuestions: number;
+        students: { id: string; name: string; email?: string | null; localId?: string | null; answers: number; missing: number }[];
+    } | null>(null);
+    const [studentSummaryLoading, setStudentSummaryLoading] = useState(false);
 
     const handleRubricChange = (ruleIndex: number, value: string) => {
         if (!activeQuestion) return;
@@ -20,10 +49,172 @@ export default function TeacherDashboard() {
         updateQuestion(activeQuestionIndex, 'rubric', newCriteria);
     };
 
+    useEffect(() => {
+        if (!currentSession.questions.length) {
+            setActiveQuestionIndex(0);
+            return;
+        }
+        if (activeQuestionIndex >= currentSession.questions.length) {
+            setActiveQuestionIndex(0);
+        }
+    }, [activeQuestionIndex, currentSession.questions.length]);
+
+    const loadSessions = async () => {
+        try {
+            setSessionLoading(true);
+            const data = await fetchSessionsList();
+            setSessions(
+                data.map((s: any) => ({
+                    id: s.id,
+                    title: s.title,
+                    createdAt: typeof s.createdAt === "string" ? s.createdAt : new Date(s.createdAt).toISOString(),
+                }))
+            );
+        } catch (err) {
+            console.error("Failed to load sessions", err);
+        } finally {
+            setSessionLoading(false);
+        }
+    };
+
+    const loadAnswerMatrix = async (sessionId: string) => {
+        try {
+            setAnswerMatrixLoading(true);
+            const data = await fetchSessionAnswerMatrix(sessionId);
+            setAnswerMatrix(data);
+        } catch (err) {
+            console.error("Failed to load answer matrix", err);
+            setAnswerMatrix(null);
+        } finally {
+            setAnswerMatrixLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadSessions();
+    }, []);
+
+    useEffect(() => {
+        if (!currentSession?.id) return;
+        loadAnswerMatrix(currentSession.id);
+    }, [currentSession?.id]);
+
+    const handleCsvPreview = async (file: File) => {
+        setImportError(null);
+        setPreviewRows([]);
+        setPreviewMapping(null);
+        setPreviewMode(null);
+        setImportStats(null);
+        setImportWarnings([]);
+        setImporting(true);
+        setUploadedFile(file);
+        setSessionTitle(file?.name ? `Imported from ${file.name}` : "");
+        setLastImportSummary(null);
+
+        try {
+            const form = new FormData();
+            form.append("file", file);
+            const res = await fetch("/api/csv-import?mode=preview", {
+                method: "POST",
+                body: form,
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || "Failed to parse CSV");
+            }
+
+            const data = await res.json();
+            setPreviewRows(data.rows || []);
+            setPreviewMapping(data.mapping || {});
+            setPreviewMode(data.mode || "question_rows");
+            setCreateNewSession((data.mode || "question_rows") === "student_rows");
+            if (data.studentCount || data.questionCount) {
+                setImportStats({
+                    studentCount: data.studentCount,
+                    questionCount: data.questionCount,
+                });
+            }
+            if (data.errors?.length) {
+                const warnings = data.errors.map((e: any) => e?.message || "CSV parse warning");
+                setImportWarnings(warnings);
+            }
+        } catch (err: any) {
+            setImportError(err?.message || "Failed to parse CSV");
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const handleImportCommit = async () => {
+        if (!previewRows.length) return;
+        setImporting(true);
+        setImportError(null);
+
+        try {
+            const isStudentImport = previewMode === "student_rows";
+            if (isStudentImport && !uploadedFile) {
+                throw new Error("Missing uploaded CSV file");
+            }
+            const res = await fetch("/api/csv-import?mode=commit", isStudentImport
+                ? {
+                    method: "POST",
+                    body: (() => {
+                        const form = new FormData();
+                        if (uploadedFile) form.append("file", uploadedFile);
+                        if (!createNewSession) {
+                            form.append("sessionId", currentSession.id);
+                        }
+                        form.append("mode", "student_rows");
+                        form.append("mapping", JSON.stringify(previewMapping || {}));
+                        form.append("createSession", String(createNewSession));
+                        if (sessionTitle) form.append("sessionTitle", sessionTitle);
+                        return form;
+                    })(),
+                }
+                : {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sessionId: currentSession.id,
+                        rows: previewRows,
+                    }),
+                });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || "Import failed");
+            }
+
+            const data = await res.json();
+            setSession(data);
+            setLastImportSummary({
+                sessionTitle: data?.title,
+                importedStudents: data?.importedStudents,
+                importedResponses: data?.importedResponses,
+                skippedStudents: data?.skippedStudents,
+            });
+            setPreviewRows([]);
+            setPreviewMapping(null);
+            setPreviewMode(null);
+            setImportStats(null);
+            setUploadedFile(null);
+            setImportWarnings([]);
+            await loadSessions();
+            await loadAnswerMatrix(data.id);
+            setImportOpen(false);
+        } catch (err: any) {
+            setImportError(err?.message || "Import failed");
+        } finally {
+            setImporting(false);
+        }
+    };
+
     const addCriterion = () => {
         if (!activeQuestion) return;
         updateQuestion(activeQuestionIndex, 'rubric', [...activeQuestion.rubric, ""]);
     };
+
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col">
@@ -42,15 +233,60 @@ export default function TeacherDashboard() {
                         onChange={(e) => updateSessionTitle(e.target.value)}
                     />
                 </div>
-                <button className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors">
-                    <Sparkles className="w-4 h-4" />
-                    <span>Auto-Generate Tool (Beta)</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setImportOpen(true)}
+                        className="flex items-center gap-2 px-3 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors"
+                    >
+                        <Upload className="w-4 h-4" />
+                        <span>Import CSV</span>
+                    </button>
+                    <button
+                        onClick={async () => {
+                            await createSession("New Session");
+                            loadSessions();
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        <span>New Session</span>
+                    </button>
+                </div>
             </header>
 
             <div className="flex flex-1 overflow-hidden">
                 {/* Sidebar: Question List */}
                 <aside className="w-64 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/50 flex flex-col">
+                    <div className="p-4 flex flex-col gap-3 border-b border-zinc-200 dark:border-zinc-800">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase text-zinc-500">Sessions</span>
+                        </div>
+                        <select
+                            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            value={currentSession.id}
+                            onChange={async (e) => {
+                                const nextId = e.target.value;
+                                if (!nextId || nextId === currentSession.id) return;
+                                try {
+                                    const data = await fetchSessionById(nextId);
+                                    setSession(data);
+                                } catch (err) {
+                                    console.error("Failed to load session", err);
+                                }
+                            }}
+                            disabled={sessionLoading || sessions.length === 0}
+                        >
+                            {sessions.length === 0 && (
+                                <option value={currentSession.id}>Loading sessions...</option>
+                            )}
+                                    {sessions.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                            {s.title}
+                                        </option>
+                                    ))}
+                                </select>
+                    </div>
+
                     <div className="p-4 flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase text-zinc-500">Questions</span>
                         <button onClick={addQuestion} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded">
@@ -76,6 +312,65 @@ export default function TeacherDashboard() {
 
                 {/* Main Content: Active Question Editor */}
                 <main className="flex-1 overflow-y-auto p-8">
+                    <div className="max-w-5xl mx-auto mb-8">
+                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-sm font-semibold uppercase text-zinc-500">Answer Overview</h2>
+                                    <p className="text-xs text-zinc-400">Grouped by class period, right vs wrong per problem.</p>
+                                </div>
+                                {answerMatrixLoading && (
+                                    <span className="text-xs text-zinc-400">Loading...</span>
+                                )}
+                            </div>
+
+                            {!answerMatrixLoading && answerMatrix?.groups?.length ? (
+                                <div className="max-h-[520px] overflow-y-auto pr-1 space-y-4">
+                                    {answerMatrix.groups.map((group) => (
+                                        <div key={group.classPeriod} className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
+                                            <div className="text-xs font-semibold uppercase text-zinc-500 mb-3">
+                                                Class Period {group.classPeriod}
+                                            </div>
+                                            <div className="space-y-3">
+                                                {group.questions
+                                                    .filter((_, idx) => idx === activeQuestionIndex)
+                                                    .map((q, idx) => (
+                                                    <div key={q.questionId} className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
+                                                        <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                                                            Problem {activeQuestionIndex + 1}
+                                                        </div>
+                                                        {q.key && (
+                                                            <div className="text-[10px] text-zinc-400">Answer key: {q.key}</div>
+                                                        )}
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {q.correct.map((name) => (
+                                                                <span key={`c-${name}`} className="px-2 py-1 rounded-full text-[10px] bg-emerald-100 text-emerald-700">
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                            {q.incorrect.map((name) => (
+                                                                <span key={`i-${name}`} className="px-2 py-1 rounded-full text-[10px] bg-rose-100 text-rose-700">
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                            {q.missing.map((name) => (
+                                                                <span key={`m-${name}`} className="px-2 py-1 rounded-full text-[10px] bg-zinc-200 text-zinc-600">
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-zinc-400">No answers yet for this session.</p>
+                            )}
+                        </div>
+                    </div>
+
                     {activeQuestion ? (
                         <div className="max-w-3xl mx-auto space-y-8">
                             <div className="flex items-center justify-between">
@@ -230,6 +525,138 @@ export default function TeacherDashboard() {
                     )}
                 </main>
             </div>
+
+            {importOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl">
+                        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
+                            <div>
+                                <h3 className="text-sm font-semibold uppercase text-zinc-500">Import CSV</h3>
+                                <p className="text-xs text-zinc-400">First data row is treated as the answer key.</p>
+                            </div>
+                            <button
+                                onClick={() => setImportOpen(false)}
+                                className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                aria-label="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-4 space-y-4">
+                            <label className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold cursor-pointer">
+                                <Upload className="w-4 h-4" />
+                                <span>Choose CSV</span>
+                                <input
+                                    type="file"
+                                    accept=".csv,text/csv"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleCsvPreview(file);
+                                    }}
+                                />
+                            </label>
+
+                            {importing && (
+                                <p className="text-xs text-zinc-500">Parsing and mapping columns…</p>
+                            )}
+
+                            {importError && (
+                                <p className="text-xs text-red-500">{importError}</p>
+                            )}
+
+                            {importWarnings.length > 0 && (
+                                <div className="text-xs text-amber-600 space-y-1">
+                                    {importWarnings.slice(0, 3).map((w, idx) => (
+                                        <p key={idx}>CSV warning: {w}</p>
+                                    ))}
+                                </div>
+                            )}
+
+                            {previewRows.length > 0 && (
+                                <div className="space-y-3">
+                                    {previewMode === "student_rows" && (
+                                        <div className="flex flex-col gap-2 text-xs text-zinc-600">
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={createNewSession}
+                                                    onChange={(e) => setCreateNewSession(e.target.checked)}
+                                                />
+                                                Create new session from this CSV
+                                            </label>
+                                            {createNewSession && (
+                                                <input
+                                                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                                    value={sessionTitle}
+                                                    onChange={(e) => setSessionTitle(e.target.value)}
+                                                    placeholder="Session title"
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-zinc-500">
+                                            Previewing {Math.min(10, previewRows.length)} of {previewRows.length} rows
+                                            {importStats?.studentCount ? ` | Students: ${importStats.studentCount}` : ""}
+                                            {importStats?.questionCount ? ` | Questions: ${importStats.questionCount}` : ""}
+                                        </p>
+                                        <button
+                                            onClick={handleImportCommit}
+                                            className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold"
+                                            disabled={importing}
+                                        >
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            {previewMode === "student_rows"
+                                                ? `Import ${importStats?.studentCount || 0} Students`
+                                                : `Import ${previewRows.length} Questions`}
+                                        </button>
+                                    </div>
+                                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
+                                                <tr>
+                                                    <th className="text-left p-2">Question</th>
+                                                    <th className="text-left p-2">Sample Answer</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {previewRows.slice(0, 10).map((row, idx) => (
+                                                    <tr key={idx} className="border-t border-zinc-200 dark:border-zinc-800">
+                                                        <td className="p-2 text-zinc-700 dark:text-zinc-200">
+                                                            {row.text || "(missing)"}
+                                                        </td>
+                                                        <td className="p-2 text-zinc-600 dark:text-zinc-400">
+                                                            {row.student_response || "—"}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {lastImportSummary && (
+                                <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+                                    <p className="font-semibold">Last import complete</p>
+                                    <p>Session: {lastImportSummary.sessionTitle || "Imported session"}</p>
+                                    {typeof lastImportSummary.importedStudents === "number" && (
+                                        <p>Students matched: {lastImportSummary.importedStudents}</p>
+                                    )}
+                                    {typeof lastImportSummary.importedResponses === "number" && (
+                                        <p>Responses imported: {lastImportSummary.importedResponses}</p>
+                                    )}
+                                    {typeof lastImportSummary.skippedStudents === "number" && (
+                                        <p>Students skipped (no match): {lastImportSummary.skippedStudents}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

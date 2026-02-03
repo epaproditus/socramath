@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { TestSession, MATH_TEST_SESSION, Question, StudentResponse } from './lessons';
-import { fetchUserSession, addQuestionAction, updateQuestionAction, removeQuestionAction } from '@/app/actions';
+import { fetchUserSession, addQuestionAction, updateQuestionAction, removeQuestionAction, createSessionAction } from '@/app/actions';
 
 type AppState = {
     mode: 'student' | 'teacher';
@@ -24,6 +24,7 @@ type AppState = {
     addQuestion: () => Promise<void>;
     updateQuestion: (index: number, field: keyof Question, value: any) => Promise<void>;
     removeQuestion: (index: number) => Promise<void>;
+    createSession: (title?: string) => Promise<void>;
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -133,5 +134,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (questionToRemove.id && !questionToRemove.id.startsWith('temp')) {
             await removeQuestionAction(questionToRemove.id);
         }
-    }
+    },
+
+    createSession: async (title?: string) => {
+        try {
+            const created = await createSessionAction(title);
+            // @ts-ignore - Types might mismatch slightly on optional fields, acceptable for now
+            set({
+                currentSession: created,
+                studentResponses: created.studentResponses || {},
+                activeQuestionId: null,
+            });
+        } catch (err) {
+            console.error("Failed to create session", err);
+        }
+    },
 }));

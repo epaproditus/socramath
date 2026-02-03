@@ -20,6 +20,7 @@ model User {
   
   // App Relations
   role          String?   @default("student")
+  localId       String?   @unique
   classPeriod   String?
   testSessions  TestSession[]
   studentResponses StudentResponse[]
@@ -95,6 +96,7 @@ model StudentResponse {
   sessionId        String
   questionId       String
   initialReasoning String?
+  originalAnswer   String?
   difficulty       Int?
   confidence       Int?
   revisedAnswer    String?

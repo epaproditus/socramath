@@ -22,6 +22,7 @@ export type StudentResponse = {
     id: string;
     questionId: string;
     initialReasoning?: string | null;
+    originalAnswer?: string | null;
     difficulty?: number | null;
     confidence?: number | null;
     revisedAnswer?: string | null;
