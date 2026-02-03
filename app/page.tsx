@@ -122,6 +122,7 @@ export default function Home() {
         Student Name: ${currentSession.studentProfile?.name || "Student"}
         Questions: ${JSON.stringify(currentSession.questions)}
         Active Question Id: ${activeQuestionId || "none"}
+        Pacing Lock (max question index): ${currentSession.studentLockIndex ?? currentSession.lockQuestionIndex ?? "none"}
         Active Review Complete: ${reviewComplete}
         Active Review Response:
         ${JSON.stringify(activeResponse || null)}

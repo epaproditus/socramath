@@ -37,5 +37,5 @@ export default async function TeacherPage() {
         );
     }
 
-    return <TeacherDashboard />;
+    return <TeacherDashboard mode="prep" />;
 }

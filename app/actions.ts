@@ -62,6 +62,8 @@ export async function fetchUserSession() {
     if (!dbSession) return null;
 
     let studentResponses: Record<string, any> = {};
+    let studentLockIndex: number | null = null;
+    let studentCurrentIndex: number | null = null;
     if (session?.user?.id) {
         const responses = await prisma.studentResponse.findMany({
             where: {
@@ -83,6 +85,26 @@ export async function fetchUserSession() {
             };
             return acc;
         }, {});
+
+        const lock = await prisma.studentSessionLock.findUnique({
+            where: {
+                sessionId_userId: {
+                    sessionId: dbSession.id,
+                    userId: session.user.id,
+                }
+            }
+        });
+        studentLockIndex = lock?.maxQuestionIndex ?? null;
+
+        const state = await prisma.studentSessionState.findUnique({
+            where: {
+                sessionId_userId: {
+                    sessionId: dbSession.id,
+                    userId: session.user.id,
+                }
+            }
+        });
+        studentCurrentIndex = state?.currentQuestionIndex ?? null;
     }
 
     // 6. Fetch Student Profile for personalization
@@ -112,7 +134,10 @@ export async function fetchUserSession() {
             rubric: JSON.parse(q.rubric || "[]"),
             vocabulary: JSON.parse(q.vocabulary || "[]"),
         })),
-        studentResponses
+        studentResponses,
+        lockQuestionIndex: dbSession.lockQuestionIndex ?? null,
+        studentLockIndex,
+        studentCurrentIndex
     };
 }
 
@@ -142,6 +167,9 @@ export async function createSessionAction(title?: string) {
     return {
         id: created.id,
         title: created.title,
+        lockQuestionIndex: created.lockQuestionIndex ?? null,
+        studentLockIndex: null,
+        studentCurrentIndex: null,
         studentProfile: null,
         questions: created.questions.map((q: any) => ({
             id: q.id,
@@ -203,12 +231,15 @@ export async function fetchSessionById(sessionId: string) {
     });
 
     if (!dbSession) {
-        throw new Error("Session not found");
+        return { questions: [], groups: [] };
     }
 
     return {
         id: dbSession.id,
         title: dbSession.title,
+        lockQuestionIndex: dbSession.lockQuestionIndex ?? null,
+        studentLockIndex: null,
+        studentCurrentIndex: null,
         studentProfile: null,
         questions: dbSession.questions.map((q: any) => ({
             id: q.id,
@@ -220,6 +251,144 @@ export async function fetchSessionById(sessionId: string) {
         })),
         studentResponses: {},
     };
+}
+
+export async function setSessionLock(sessionId: string, maxQuestionIndex: number | null) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    await prisma.testSession.update({
+        where: { id: sessionId },
+        data: { lockQuestionIndex: maxQuestionIndex },
+    });
+}
+
+export async function setStudentLock(sessionId: string, userId: string, maxQuestionIndex: number | null) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (maxQuestionIndex === null) {
+        await prisma.studentSessionLock.deleteMany({
+            where: { sessionId, userId },
+        });
+        return;
+    }
+
+    await prisma.studentSessionLock.upsert({
+        where: { sessionId_userId: { sessionId, userId } },
+        update: { maxQuestionIndex },
+        create: { sessionId, userId, maxQuestionIndex },
+    });
+}
+
+export async function fetchSessionProgress(sessionId: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const dbSession = await prisma.testSession.findFirst({
+        where: { id: sessionId, userId: targetUserId },
+        include: { questions: { orderBy: { orderIndex: "asc" } } },
+    });
+
+    if (!dbSession) {
+        return { questions: [], students: [], lockQuestionIndex: null };
+    }
+
+    const responses = await prisma.studentResponse.findMany({
+        where: { sessionId },
+        include: { user: true, question: true },
+    });
+
+    const keyUserId = session?.user?.id || "";
+    const keyByQuestionId = new Map<string, string>();
+    responses
+        .filter((r) => r.userId === keyUserId)
+        .forEach((r) => keyByQuestionId.set(r.questionId, r.originalAnswer || ""));
+
+    const studentLocks = await prisma.studentSessionLock.findMany({
+        where: { sessionId },
+    });
+    const lockByUserId = new Map(studentLocks.map((l) => [l.userId, l.maxQuestionIndex]));
+
+    const studentMap: Record<string, any> = {};
+    responses
+        .filter((r) => r.userId !== keyUserId)
+        .forEach((r) => {
+            const user = r.user;
+            if (!studentMap[user.id]) {
+                studentMap[user.id] = {
+                    id: user.id,
+                    name: user.name || "Unknown",
+                    classPeriod: user.classPeriod || "Unassigned",
+                    localId: user.localId || null,
+                    lockQuestionIndex: lockByUserId.get(user.id) ?? null,
+                    progress: {},
+                };
+            }
+            const hasRevised = !!r.revisedAnswer;
+            const hasAny = !!(r.initialReasoning || r.difficulty || r.confidence || r.originalAnswer || r.revisedAnswer);
+            studentMap[user.id].progress[r.questionId] = {
+                status: hasRevised ? "completed" : hasAny ? "in_progress" : "not_started",
+                originalAnswer: r.originalAnswer || "",
+                revisedAnswer: r.revisedAnswer || "",
+                correctAnswer: keyByQuestionId.get(r.questionId) || "",
+            };
+        });
+
+    const questions = dbSession.questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        orderIndex: q.orderIndex,
+    }));
+
+    return {
+        questions,
+        students: Object.values(studentMap),
+        lockQuestionIndex: dbSession.lockQuestionIndex ?? null,
+    };
+}
+
+export async function setStudentCurrentQuestion(sessionId: string, questionIndex: number) {
+    const session = await auth();
+    if (!session?.user?.id) {
+        throw new Error("Unauthorized");
+    }
+
+    await prisma.studentSessionState.upsert({
+        where: { sessionId_userId: { sessionId, userId: session.user.id } },
+        update: { currentQuestionIndex: questionIndex },
+        create: { sessionId, userId: session.user.id, currentQuestionIndex: questionIndex },
+    });
 }
 
 export async function setActiveSession(sessionId: string) {
@@ -261,9 +430,10 @@ export async function deleteSessionAction(sessionId: string) {
         throw new Error("Unauthorized");
     }
 
-    await prisma.testSession.delete({
-        where: { id: sessionId },
+    const result = await prisma.testSession.deleteMany({
+        where: { id: sessionId, userId: targetUserId },
     });
+    return result.count;
 }
 
 export async function fetchSessionStudentSummary(sessionId: string) {
@@ -286,7 +456,7 @@ export async function fetchSessionStudentSummary(sessionId: string) {
     });
 
     if (!dbSession) {
-        throw new Error("Session not found");
+        return { questions: [], groups: [] };
     }
 
     const totalQuestions = await prisma.question.count({
@@ -355,7 +525,7 @@ export async function fetchSessionAnswerMatrix(sessionId: string) {
     });
 
     if (!dbSession) {
-        throw new Error("Session not found");
+        return { questions: [], groups: [] };
     }
 
     const responses = await prisma.studentResponse.findMany({
@@ -404,22 +574,39 @@ export async function fetchSessionAnswerMatrix(sessionId: string) {
             const correct: string[] = [];
             const incorrect: string[] = [];
             const missing: string[] = [];
+            const freq = new Map<string, number>();
             studentList.forEach((s: any) => {
                 const raw = s.answers[q.id] || "";
                 if (!raw) {
                     missing.push(s.name);
                     return;
                 }
-                if (normalizeAnswer(raw) === normalizeAnswer(q.key)) {
-                    correct.push(s.name);
+                const norm = normalizeAnswer(raw);
+                freq.set(norm, (freq.get(norm) || 0) + 1);
+                if (q.key) {
+                    if (normalizeAnswer(raw) === normalizeAnswer(q.key)) {
+                        correct.push(s.name);
+                    } else {
+                        incorrect.push(s.name);
+                    }
                 } else {
-                    incorrect.push(s.name);
+                    missing.push(s.name);
                 }
             });
+            let suggestedAnswer = "";
+            let suggestedCount = 0;
+            for (const [answer, count] of freq.entries()) {
+                if (count > suggestedCount) {
+                    suggestedCount = count;
+                    suggestedAnswer = answer;
+                }
+            }
             return {
                 questionId: q.id,
                 text: q.text,
                 key: q.key,
+                suggestedAnswer,
+                suggestedCount,
                 correct,
                 incorrect,
                 missing,

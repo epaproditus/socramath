@@ -5,7 +5,7 @@ import { useAppStore } from "@/lib/store";
 import { QuestionCard } from "@/components/QuestionCard";
 
 export const QuestionSidebar = () => {
-  const { currentSession, activeQuestionId, sidebarOpen, setSidebarOpen } = useAppStore();
+  const { currentSession, activeQuestionId, sidebarOpen, setSidebarOpen, studentResponses } = useAppStore();
 
   const { question, index } = useMemo(() => {
     if (!currentSession.questions.length) {
@@ -39,13 +39,18 @@ export const QuestionSidebar = () => {
           Hide
         </button>
       </div>
+      {(currentSession.studentLockIndex || currentSession.lockQuestionIndex) && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+          Pacing is on. You can’t go past question {currentSession.studentLockIndex ?? currentSession.lockQuestionIndex}.
+        </div>
+      )}
       <QuestionCard
         args={{
           question_number: index + 1,
           total_questions: currentSession.questions.length,
           text: question.text,
           image_url: question.image_url,
-          student_response: question.student_response,
+          student_response: studentResponses?.[question.id]?.originalAnswer || "",
           vocabulary: question.vocabulary,
         }}
       />

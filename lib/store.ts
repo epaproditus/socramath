@@ -58,6 +58,10 @@ export const useAppStore = create<AppState>((set, get) => ({
                     studentResponses: sessionData.studentResponses || {},
                     isLoading: false
                 });
+                if (sessionData.studentCurrentIndex && sessionData.questions?.length) {
+                    const idx = Math.max(1, Math.min(sessionData.questions.length, sessionData.studentCurrentIndex));
+                    set({ activeQuestionId: sessionData.questions[idx - 1]?.id || null });
+                }
             } else {
                 console.log("No user session found (not logged in), keeping mock data");
                 set({ isLoading: false });

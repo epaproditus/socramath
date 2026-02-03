@@ -1,12 +1,12 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
-import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix, setActiveSession, deleteSessionAction, setAnswerKey } from "@/app/actions";
+import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix, setActiveSession, deleteSessionAction, setAnswerKey, fetchSessionProgress, setSessionLock, setStudentLock } from "@/app/actions";
 import { ArrowLeft, Sparkles, Plus, Trash2, Upload, CheckCircle2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
-export default function TeacherDashboard() {
+export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "live" }) {
     const router = useRouter();
     const { currentSession, updateSessionTitle, updateQuestion, addQuestion, removeQuestion, setMode, setSession, createSession } = useAppStore();
 
@@ -14,9 +14,15 @@ export default function TeacherDashboard() {
     const activeQuestion = currentSession.questions[activeQuestionIndex];
     const [answerMatrix, setAnswerMatrix] = useState<{
         questions: { id: string; text: string; key: string }[];
-        groups: { classPeriod: string; questions: { questionId: string; text: string; key: string; correct: string[]; incorrect: string[]; missing: string[] }[] }[];
+        groups: { classPeriod: string; questions: { questionId: string; text: string; key: string; suggestedAnswer?: string; suggestedCount?: number; correct: string[]; incorrect: string[]; missing: string[] }[] }[];
     } | null>(null);
     const [answerMatrixLoading, setAnswerMatrixLoading] = useState(false);
+    const [progressData, setProgressData] = useState<{
+        questions: { id: string; text: string; orderIndex: number }[];
+        students: { id: string; name: string; classPeriod: string; localId?: string | null; lockQuestionIndex?: number | null; progress: Record<string, { status: string; originalAnswer: string; revisedAnswer: string; correctAnswer: string; }> }[];
+        lockQuestionIndex: number | null;
+    } | null>(null);
+    const [progressLoading, setProgressLoading] = useState(false);
     const [editingAnswerKey, setEditingAnswerKey] = useState(false);
     const [answerKeyDraft, setAnswerKeyDraft] = useState("");
     const [importOpen, setImportOpen] = useState(false);
@@ -73,8 +79,10 @@ export default function TeacherDashboard() {
                     isActive: s.isActive,
                 }))
             );
+            return data as { id: string }[];
         } catch (err) {
             console.error("Failed to load sessions", err);
+            return [];
         } finally {
             setSessionLoading(false);
         }
@@ -93,14 +101,42 @@ export default function TeacherDashboard() {
         }
     };
 
+    const loadProgress = async (sessionId: string) => {
+        try {
+            setProgressLoading(true);
+            const data = await fetchSessionProgress(sessionId);
+            setProgressData(data);
+        } catch (err) {
+            console.error("Failed to load progress data", err);
+            setProgressData(null);
+        } finally {
+            setProgressLoading(false);
+        }
+    };
+
     useEffect(() => {
-        loadSessions();
+        (async () => {
+            const list = await loadSessions();
+            if (!list.length) return;
+            const stillExists = list.some((s) => s.id === currentSession.id);
+            if (!stillExists) {
+                try {
+                    const data = await fetchSessionById(list[0].id);
+                    setSession(data);
+                    loadAnswerMatrix(list[0].id);
+                } catch (err) {
+                    console.error("Failed to load fallback session", err);
+                }
+            }
+        })();
     }, []);
 
     useEffect(() => {
         if (!currentSession?.id) return;
+        if (sessions.length && !sessions.some((s) => s.id === currentSession.id)) return;
         loadAnswerMatrix(currentSession.id);
-    }, [currentSession?.id]);
+        loadProgress(currentSession.id);
+    }, [currentSession?.id, sessions]);
 
     useEffect(() => {
         if (!answerMatrix?.questions?.length) return;
@@ -242,25 +278,27 @@ export default function TeacherDashboard() {
                         onChange={(e) => updateSessionTitle(e.target.value)}
                     />
                 </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setImportOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors"
-                    >
-                        <Upload className="w-4 h-4" />
-                        <span>Import CSV</span>
-                    </button>
-                    <button
-                        onClick={async () => {
-                            await createSession("New Session");
-                            loadSessions();
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
-                    >
-                        <Sparkles className="w-4 h-4" />
-                        <span>New Session</span>
-                    </button>
-                </div>
+                {mode === "prep" && (
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setImportOpen(true)}
+                            className="flex items-center gap-2 px-3 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            <Upload className="w-4 h-4" />
+                            <span>Import CSV</span>
+                        </button>
+                        <button
+                            onClick={async () => {
+                                await createSession("New Session");
+                                loadSessions();
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            <span>New Session</span>
+                        </button>
+                    </div>
+                )}
             </header>
 
             <div className="flex flex-1 overflow-hidden">
@@ -314,9 +352,21 @@ export default function TeacherDashboard() {
                                     const ok = window.confirm("Delete this session? This cannot be undone.");
                                     if (!ok) return;
                                     try {
-                                        await deleteSessionAction(currentSession.id);
-                                        await loadSessions();
-                                        const next = (await fetchSessionsList())[0];
+                                        const deleted = await deleteSessionAction(currentSession.id);
+                                        if (!deleted) {
+                                            console.error("Delete failed: session not found or not owned by user.");
+                                            return;
+                                        }
+                                        const list = await fetchSessionsList();
+                                        setSessions(
+                                            list.map((s: any) => ({
+                                                id: s.id,
+                                                title: s.title,
+                                                createdAt: typeof s.createdAt === "string" ? s.createdAt : new Date(s.createdAt).toISOString(),
+                                                isActive: s.isActive,
+                                            }))
+                                        );
+                                        const next = list[0];
                                         if (next?.id) {
                                             const data = await fetchSessionById(next.id);
                                             setSession(data);
@@ -335,7 +385,11 @@ export default function TeacherDashboard() {
 
                     <div className="p-4 flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase text-zinc-500">Questions</span>
-                        <button onClick={addQuestion} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded">
+                        <button
+                            onClick={addQuestion}
+                            className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded"
+                            disabled={mode === "live"}
+                        >
                             <Plus className="w-4 h-4" />
                         </button>
                     </div>
@@ -358,6 +412,198 @@ export default function TeacherDashboard() {
 
                 {/* Main Content: Active Question Editor */}
                 <main className="flex-1 overflow-y-auto p-8">
+                    {mode === "live" && (
+                    <div className="max-w-5xl mx-auto mb-8">
+                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-sm font-semibold uppercase text-zinc-500">Progress Grid</h2>
+                                    <p className="text-xs text-zinc-400">Track where students are across questions.</p>
+                                </div>
+                                {progressLoading && (
+                                    <span className="text-xs text-zinc-400">Loading...</span>
+                                )}
+                            </div>
+
+                            {!progressLoading && progressData?.questions?.length ? (
+                                <>
+                                    <div className="flex items-center gap-3 text-xs text-zinc-600">
+                                        <label className="flex items-center gap-2">
+                                            Global lock:
+                                            <select
+                                                className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1 text-xs"
+                                                value={progressData.lockQuestionIndex ?? 0}
+                                                onChange={async (e) => {
+                                                    const value = Number(e.target.value);
+                                                    await setSessionLock(currentSession.id, value === 0 ? null : value);
+                                                    loadProgress(currentSession.id);
+                                                }}
+                                            >
+                                                <option value={0}>No lock</option>
+                                                {progressData.questions.map((q, idx) => (
+                                                    <option key={q.id} value={idx + 1}>Q{idx + 1}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <span className="text-[11px] text-zinc-400">Per-student overrides available per row.</span>
+                                    </div>
+
+                                    <div className="max-h-[420px] overflow-auto border border-zinc-200 dark:border-zinc-800 rounded-lg">
+                                        <table className="w-full text-xs border-collapse">
+                                            <thead className="sticky top-0 bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
+                                                <tr>
+                                                    <th className="text-left p-2 w-48">Student</th>
+                                                    {progressData.questions.map((_, idx) => (
+                                                        <th key={idx} className="text-center p-2 w-10">Q{idx + 1}</th>
+                                                    ))}
+                                                    <th className="text-center p-2 w-24">Lock</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(() => {
+                                                    const grouped: Record<string, typeof progressData.students> = {};
+                                                    progressData.students.forEach((s) => {
+                                                        const key = s.classPeriod || "Unassigned";
+                                                        if (!grouped[key]) grouped[key] = [];
+                                                        grouped[key].push(s);
+                                                    });
+                                                    return Object.entries(grouped).map(([period, students]) => (
+                                                        <Fragment key={`section-${period}`}>
+                                                            <tr className="bg-zinc-50 dark:bg-zinc-950">
+                                                                <td colSpan={progressData.questions.length + 2} className="p-2 text-[11px] font-semibold text-zinc-500 uppercase">
+                                                                    {period}
+                                                                </td>
+                                                            </tr>
+                                                            {students.map((s) => (
+                                                                <tr key={s.id} className="border-t border-zinc-200 dark:border-zinc-800">
+                                                                    <td className="p-2 text-zinc-700 dark:text-zinc-200">
+                                                                        <div className="font-semibold">{s.name}</div>
+                                                                        <div className="text-[10px] text-zinc-400">{s.localId || "No ID"}</div>
+                                                                    </td>
+                                                                    {progressData.questions.map((q, idx) => {
+                                                                        const cell = s.progress[q.id];
+                                                                        const status = cell?.status || "not_started";
+                                                                        const hasKey = !!cell?.correctAnswer;
+                                                                        const isCorrect = hasKey && cell.originalAnswer && cell.correctAnswer && cell.originalAnswer === cell.correctAnswer;
+                                                                        const color =
+                                                                            status === "completed"
+                                                                                ? isCorrect ? "bg-emerald-500" : hasKey ? "bg-rose-500" : "bg-indigo-500"
+                                                                                : status === "in_progress"
+                                                                                    ? "bg-amber-400"
+                                                                                    : "bg-zinc-300";
+                                                                        return (
+                                                                            <td key={q.id} className="p-2 text-center">
+                                                                                <div className={`mx-auto h-3 w-3 rounded-full ${color}`} title={cell?.originalAnswer || ""} />
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                    <td className="p-2 text-center">
+                                                                        <select
+                                                                            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-1 py-0.5 text-[10px]"
+                                                                            value={s.lockQuestionIndex ?? 0}
+                                                                            onChange={async (e) => {
+                                                                                const value = Number(e.target.value);
+                                                                                await setStudentLock(currentSession.id, s.id, value === 0 ? null : value);
+                                                                                loadProgress(currentSession.id);
+                                                                            }}
+                                                                        >
+                                                                            <option value={0}>—</option>
+                                                                            {progressData.questions.map((_, idx) => (
+                                                                                <option key={idx} value={idx + 1}>Q{idx + 1}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </Fragment>
+                                                    ));
+                                                })()}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-xs text-zinc-400">No progress data yet.</p>
+                            )}
+                        </div>
+                    </div>
+                    )}
+
+                    {mode === "live" && (
+                    <div className="max-w-5xl mx-auto mb-8">
+                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-sm font-semibold uppercase text-zinc-500">Question Focus</h2>
+                                    <p className="text-xs text-zinc-400">Live status for the selected question.</p>
+                                </div>
+                            </div>
+
+                            {progressData?.questions?.length ? (
+                                (() => {
+                                    const q = progressData.questions[activeQuestionIndex];
+                                    if (!q) return <p className="text-xs text-zinc-400">No question selected.</p>;
+                                    let completed = 0;
+                                    let inProgress = 0;
+                                    let notStarted = 0;
+                                    let correct = 0;
+                                    let incorrect = 0;
+                                    progressData.students.forEach((s) => {
+                                        const cell = s.progress[q.id];
+                                        if (!cell) {
+                                            notStarted += 1;
+                                            return;
+                                        }
+                                        if (cell.status === "completed") completed += 1;
+                                        else if (cell.status === "in_progress") inProgress += 1;
+                                        else notStarted += 1;
+                                        if (cell.correctAnswer) {
+                                            if (cell.originalAnswer && cell.originalAnswer === cell.correctAnswer) correct += 1;
+                                            else if (cell.originalAnswer) incorrect += 1;
+                                        }
+                                    });
+                                    return (
+                                        <div className="space-y-3">
+                                            <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                                                {q.text || `Question ${activeQuestionIndex + 1}`}
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 text-xs">
+                                                <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Completed: {completed}</span>
+                                                <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700">In progress: {inProgress}</span>
+                                                <span className="px-2 py-1 rounded-full bg-zinc-200 text-zinc-600">Not started: {notStarted}</span>
+                                                {correct + incorrect > 0 && (
+                                                    <>
+                                                        <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Correct: {correct}</span>
+                                                        <span className="px-2 py-1 rounded-full bg-rose-100 text-rose-700">Incorrect: {incorrect}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                            <div className="max-h-[220px] overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 space-y-2 text-xs">
+                                                {progressData.students.map((s) => {
+                                                    const cell = s.progress[q.id];
+                                                    if (!cell?.originalAnswer) return null;
+                                                    return (
+                                                        <div key={s.id} className="flex items-start justify-between gap-3">
+                                                            <div className="text-zinc-700 dark:text-zinc-200">{s.name}</div>
+                                                            <div className="text-zinc-500 dark:text-zinc-400 flex-1 text-right">{cell.originalAnswer}</div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {progressData.students.every((s) => !s.progress[q.id]?.originalAnswer) && (
+                                                    <p className="text-zinc-400">No answers yet.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()
+                            ) : (
+                                <p className="text-xs text-zinc-400">No progress data yet.</p>
+                            )}
+                        </div>
+                    </div>
+                    )}
+
+                    {mode === "live" && (
                     <div className="max-w-5xl mx-auto mb-8">
                         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 space-y-4">
                             <div className="flex items-center justify-between">
@@ -388,6 +634,11 @@ export default function TeacherDashboard() {
                                                         <div className="text-[10px] text-zinc-400">
                                                             Answer key: {q.key || "—"}
                                                         </div>
+                                                        {!q.key && q.suggestedAnswer && (
+                                                            <div className="text-[10px] text-amber-700">
+                                                                No key yet. Most selected: {q.suggestedAnswer} ({q.suggestedCount || 0})
+                                                            </div>
+                                                        )}
                                                         <div className="mt-2 flex items-center gap-2">
                                                             {!editingAnswerKey ? (
                                                                 <button
@@ -458,8 +709,9 @@ export default function TeacherDashboard() {
                             )}
                         </div>
                     </div>
+                    )}
 
-                    {activeQuestion ? (
+                    {mode === "prep" && activeQuestion ? (
                         <div className="max-w-3xl mx-auto space-y-8">
                             <div className="flex items-center justify-between">
                                 <h2 className="text-xl font-semibold">Question #{activeQuestionIndex + 1}</h2>
@@ -614,7 +866,7 @@ export default function TeacherDashboard() {
                 </main>
             </div>
 
-            {importOpen && (
+            {mode === "prep" && importOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl">
                         <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">

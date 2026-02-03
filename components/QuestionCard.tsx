@@ -385,7 +385,7 @@ export const QuestionCard = ({ args }: { args?: any }) => {
                             )}
 
                             {/* Original Test Answer */}
-                            {safeArgs.student_response && (
+                            {safeArgs.student_response && response?.initialReasoning && (
                                 <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
                                     <p className="text-[10px] font-bold uppercase text-zinc-500 mb-1">Original Answer (From Test)</p>
                                     <p className="text-sm italic text-zinc-600 dark:text-zinc-400">

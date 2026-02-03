@@ -24,6 +24,8 @@ model User {
   classPeriod   String?
   testSessions  TestSession[]
   studentResponses StudentResponse[]
+  sessionLocks  StudentSessionLock[]
+  sessionStates StudentSessionState[]
 }
 
 model Account {
@@ -68,12 +70,15 @@ model TestSession {
   userId    String
   title     String   @default("New Session")
   isActive  Boolean  @default(false)
+  lockQuestionIndex Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions Question[]
   studentResponses StudentResponse[]
+  studentLocks StudentSessionLock[]
+  studentStates StudentSessionState[]
 }
 
 model Question {
@@ -110,4 +115,32 @@ model StudentResponse {
   question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sessionId, questionId])
+}
+
+model StudentSessionLock {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String
+  maxQuestionIndex Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+}
+
+model StudentSessionState {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String
+  currentQuestionIndex Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
 }

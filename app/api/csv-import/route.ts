@@ -531,8 +531,7 @@ export async function POST(req: Request) {
       dataRows = rows.slice(1);
     }
 
-    const answerKeyRow = dataRows[0];
-    const studentRows = dataRows.slice(1);
+    const studentRows = dataRows;
 
     const existingQuestions = await prisma.question.findMany({
       where: { sessionId },
@@ -600,36 +599,6 @@ export async function POST(req: Request) {
       userByLocalId.set(u.localId, { id: u.id });
       userByNormalizedLocalId.set(normalizeLocalId(u.localId), { id: u.id });
     });
-
-    if (answerKeyRow) {
-      for (const group of groupedQuestions) {
-        const text = (group.text || normalizeQuestionText(group.key)).trim();
-        const question = questionLookup.get(text.toLowerCase());
-        if (!question) continue;
-        const rawAnswer = joinPartAnswers(answerKeyRow, group.columns);
-        if (!rawAnswer) continue;
-        responseOps.push(
-          prisma.studentResponse.upsert({
-            where: {
-              userId_sessionId_questionId: {
-                userId: session.user.id,
-                sessionId,
-                questionId: question.id,
-              },
-            },
-            update: {
-              originalAnswer: rawAnswer,
-            },
-            create: {
-              userId: session.user.id,
-              sessionId,
-              questionId: question.id,
-              originalAnswer: rawAnswer,
-            },
-          })
-        );
-      }
-    }
 
     for (const row of studentRows) {
       const firstName = fallbackStudentMapping.first_name

@@ -10,6 +10,9 @@ export type Question = {
 export type TestSession = {
     id: string;
     title: string;
+    lockQuestionIndex?: number | null;
+    studentLockIndex?: number | null;
+    studentCurrentIndex?: number | null;
     studentProfile?: {
         name: string | null;
         classPeriod: string | null;
