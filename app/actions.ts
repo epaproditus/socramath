@@ -26,9 +26,17 @@ export async function fetchUserSession() {
 
     // 3. Fetch the latest session for the Admin
     let dbSession = await prisma.testSession.findFirst({
-        where: { userId: targetUserId },
+        where: { userId: targetUserId, isActive: true },
         include: { questions: { orderBy: { orderIndex: 'asc' } } }
     });
+
+    if (!dbSession) {
+        dbSession = await prisma.testSession.findFirst({
+            where: { userId: targetUserId },
+            orderBy: { createdAt: "desc" },
+            include: { questions: { orderBy: { orderIndex: 'asc' } } }
+        });
+    }
 
     // 4. Fallback: If current user is Admin and no session exists, create it
     if (!dbSession && session?.user?.email === adminEmail) {
@@ -36,6 +44,7 @@ export async function fetchUserSession() {
             data: {
                 userId: targetUserId,
                 title: "AP Calculus AB - Unit 4 Test Corrections",
+                isActive: true,
                 questions: {
                     create: MATH_TEST_SESSION.questions.map((q: any, i: number) => ({
                         text: q.text,
@@ -125,6 +134,7 @@ export async function createSessionAction(title?: string) {
         data: {
             userId: targetUserId,
             title: title?.trim() || "New Session",
+            isActive: false,
         },
         include: { questions: { orderBy: { orderIndex: "asc" } } },
     });
@@ -162,13 +172,14 @@ export async function fetchSessionsList() {
     const sessions = await prisma.testSession.findMany({
         where: { userId: targetUserId },
         orderBy: { createdAt: "desc" },
-        select: { id: true, title: true, createdAt: true },
+        select: { id: true, title: true, createdAt: true, isActive: true },
     });
 
     return sessions.map((s) => ({
         id: s.id,
         title: s.title,
         createdAt: s.createdAt,
+        isActive: s.isActive,
     }));
 }
 
@@ -209,6 +220,50 @@ export async function fetchSessionById(sessionId: string) {
         })),
         studentResponses: {},
     };
+}
+
+export async function setActiveSession(sessionId: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    await prisma.testSession.updateMany({
+        where: { userId: targetUserId, isActive: true },
+        data: { isActive: false },
+    });
+
+    await prisma.testSession.update({
+        where: { id: sessionId },
+        data: { isActive: true },
+    });
+}
+
+export async function deleteSessionAction(sessionId: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    await prisma.testSession.delete({
+        where: { id: sessionId },
+    });
 }
 
 export async function fetchSessionStudentSummary(sessionId: string) {
@@ -380,6 +435,48 @@ export async function fetchSessionAnswerMatrix(sessionId: string) {
         questions,
         groups: grouped,
     };
+}
+
+export async function setAnswerKey(sessionId: string, questionId: string, answerKey: string) {
+    const session = await auth();
+    if (!session?.user?.id) {
+        throw new Error("Unauthorized");
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session.user.id;
+
+    const dbSession = await prisma.testSession.findFirst({
+        where: { id: sessionId, userId: targetUserId },
+        select: { id: true },
+    });
+
+    if (!dbSession) {
+        throw new Error("Session not found");
+    }
+
+    await prisma.studentResponse.upsert({
+        where: {
+            userId_sessionId_questionId: {
+                userId: session.user.id,
+                sessionId,
+                questionId,
+            },
+        },
+        update: {
+            originalAnswer: answerKey,
+        },
+        create: {
+            userId: session.user.id,
+            sessionId,
+            questionId,
+            originalAnswer: answerKey,
+        },
+    });
 }
 
 export async function addQuestionAction(sessionId: string, orderIndex: number) {

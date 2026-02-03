@@ -67,6 +67,7 @@ model TestSession {
   id        String   @id @default(cuid())
   userId    String
   title     String   @default("New Session")
+  isActive  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   

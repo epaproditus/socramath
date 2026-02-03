@@ -30,7 +30,9 @@ async function sync() {
     for (const student of students) {
         if (!student.google_email) continue
 
-        await prisma.user.upsert({
+        const localIdToSet: string | null = student.student_local_id || null
+
+        const emailUser = await prisma.user.upsert({
             where: { email: student.google_email },
             update: {
                 name: student.name,
@@ -44,6 +46,54 @@ async function sync() {
                 role: 'student'
             }
         })
+
+        if (localIdToSet) {
+            const localOnly = await prisma.user.findFirst({
+                where: { localId: localIdToSet, email: null }
+            })
+
+            if (localOnly) {
+                const responses = await prisma.studentResponse.findMany({
+                    where: { userId: localOnly.id }
+                })
+
+                for (const r of responses) {
+                    const existing = await prisma.studentResponse.findUnique({
+                        where: {
+                            userId_sessionId_questionId: {
+                                userId: emailUser.id,
+                                sessionId: r.sessionId,
+                                questionId: r.questionId
+                            }
+                        }
+                    })
+
+                    if (!existing) {
+                        await prisma.studentResponse.create({
+                            data: {
+                                userId: emailUser.id,
+                                sessionId: r.sessionId,
+                                questionId: r.questionId,
+                                initialReasoning: r.initialReasoning,
+                                originalAnswer: r.originalAnswer,
+                                difficulty: r.difficulty,
+                                confidence: r.confidence,
+                                revisedAnswer: r.revisedAnswer,
+                                summary: r.summary
+                            }
+                        })
+                    }
+                }
+
+                await prisma.studentResponse.deleteMany({ where: { userId: localOnly.id } })
+                await prisma.user.delete({ where: { id: localOnly.id } })
+            }
+
+            await prisma.user.update({
+                where: { id: emailUser.id },
+                data: { localId: localIdToSet }
+            })
+        }
     }
 
     console.log('Sync complete!')

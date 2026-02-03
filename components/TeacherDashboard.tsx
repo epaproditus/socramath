@@ -1,7 +1,7 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
-import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix } from "@/app/actions";
+import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix, setActiveSession, deleteSessionAction, setAnswerKey } from "@/app/actions";
 import { ArrowLeft, Sparkles, Plus, Trash2, Upload, CheckCircle2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -17,6 +17,8 @@ export default function TeacherDashboard() {
         groups: { classPeriod: string; questions: { questionId: string; text: string; key: string; correct: string[]; incorrect: string[]; missing: string[] }[] }[];
     } | null>(null);
     const [answerMatrixLoading, setAnswerMatrixLoading] = useState(false);
+    const [editingAnswerKey, setEditingAnswerKey] = useState(false);
+    const [answerKeyDraft, setAnswerKeyDraft] = useState("");
     const [importOpen, setImportOpen] = useState(false);
     const [importing, setImporting] = useState(false);
     const [previewRows, setPreviewRows] = useState<any[]>([]);
@@ -34,7 +36,7 @@ export default function TeacherDashboard() {
         importedResponses?: number;
         skippedStudents?: number;
     } | null>(null);
-    const [sessions, setSessions] = useState<{ id: string; title: string; createdAt: string }[]>([]);
+    const [sessions, setSessions] = useState<{ id: string; title: string; createdAt: string; isActive?: boolean }[]>([]);
     const [sessionLoading, setSessionLoading] = useState(false);
     const [studentSummary, setStudentSummary] = useState<{
         totalQuestions: number;
@@ -68,6 +70,7 @@ export default function TeacherDashboard() {
                     id: s.id,
                     title: s.title,
                     createdAt: typeof s.createdAt === "string" ? s.createdAt : new Date(s.createdAt).toISOString(),
+                    isActive: s.isActive,
                 }))
             );
         } catch (err) {
@@ -98,6 +101,12 @@ export default function TeacherDashboard() {
         if (!currentSession?.id) return;
         loadAnswerMatrix(currentSession.id);
     }, [currentSession?.id]);
+
+    useEffect(() => {
+        if (!answerMatrix?.questions?.length) return;
+        const key = answerMatrix.questions[activeQuestionIndex]?.key || "";
+        setAnswerKeyDraft(key);
+    }, [answerMatrix?.questions, activeQuestionIndex]);
 
     const handleCsvPreview = async (file: File) => {
         setImportError(null);
@@ -270,6 +279,7 @@ export default function TeacherDashboard() {
                                 try {
                                     const data = await fetchSessionById(nextId);
                                     setSession(data);
+                                    loadAnswerMatrix(nextId);
                                 } catch (err) {
                                     console.error("Failed to load session", err);
                                 }
@@ -279,12 +289,48 @@ export default function TeacherDashboard() {
                             {sessions.length === 0 && (
                                 <option value={currentSession.id}>Loading sessions...</option>
                             )}
-                                    {sessions.map((s) => (
-                                        <option key={s.id} value={s.id}>
-                                            {s.title}
-                                        </option>
-                                    ))}
-                                </select>
+                            {sessions.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                    {s.isActive ? "★ " : ""}{s.title}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        await setActiveSession(currentSession.id);
+                                        await loadSessions();
+                                    } catch (err) {
+                                        console.error("Failed to set active session", err);
+                                    }
+                                }}
+                                className="flex-1 text-[11px] px-2 py-1 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            >
+                                Set Active
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const ok = window.confirm("Delete this session? This cannot be undone.");
+                                    if (!ok) return;
+                                    try {
+                                        await deleteSessionAction(currentSession.id);
+                                        await loadSessions();
+                                        const next = (await fetchSessionsList())[0];
+                                        if (next?.id) {
+                                            const data = await fetchSessionById(next.id);
+                                            setSession(data);
+                                            loadAnswerMatrix(next.id);
+                                        }
+                                    } catch (err) {
+                                        console.error("Failed to delete session", err);
+                                    }
+                                }}
+                                className="flex-1 text-[11px] px-2 py-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50"
+                            >
+                                Delete
+                            </button>
+                        </div>
                     </div>
 
                     <div className="p-4 flex items-center justify-between">
@@ -339,9 +385,51 @@ export default function TeacherDashboard() {
                                                         <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
                                                             Problem {activeQuestionIndex + 1}
                                                         </div>
-                                                        {q.key && (
-                                                            <div className="text-[10px] text-zinc-400">Answer key: {q.key}</div>
-                                                        )}
+                                                        <div className="text-[10px] text-zinc-400">
+                                                            Answer key: {q.key || "—"}
+                                                        </div>
+                                                        <div className="mt-2 flex items-center gap-2">
+                                                            {!editingAnswerKey ? (
+                                                                <button
+                                                                    onClick={() => setEditingAnswerKey(true)}
+                                                                    className="text-[10px] px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-100"
+                                                                >
+                                                                    Edit key
+                                                                </button>
+                                                            ) : (
+                                                                <>
+                                                                    <input
+                                                                        className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1 text-[11px]"
+                                                                        value={answerKeyDraft}
+                                                                        onChange={(e) => setAnswerKeyDraft(e.target.value)}
+                                                                        placeholder="Enter answer key"
+                                                                    />
+                                                                    <button
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                await setAnswerKey(currentSession.id, q.questionId, answerKeyDraft);
+                                                                                await loadAnswerMatrix(currentSession.id);
+                                                                                setEditingAnswerKey(false);
+                                                                            } catch (err) {
+                                                                                console.error("Failed to update answer key", err);
+                                                                            }
+                                                                        }}
+                                                                        className="text-[10px] px-2 py-1 rounded bg-emerald-600 text-white"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setEditingAnswerKey(false);
+                                                                            setAnswerKeyDraft(q.key || "");
+                                                                        }}
+                                                                        className="text-[10px] px-2 py-1 rounded border border-zinc-200 text-zinc-600"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                         <div className="mt-2 flex flex-wrap gap-1">
                                                             {q.correct.map((name) => (
                                                                 <span key={`c-${name}`} className="px-2 py-1 rounded-full text-[10px] bg-emerald-100 text-emerald-700">
