@@ -9,6 +9,8 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { QuestionTrigger } from "@/components/QuestionTrigger";
+import { MarkDoneTrigger } from "@/components/MarkDoneTrigger";
+import { MarkGoalTrigger } from "@/components/MarkGoalTrigger";
 import { HintStack } from "@/components/HintStack";
 import {
   ActionBarMorePrimitive,
@@ -155,10 +157,6 @@ const Composer: FC = () => {
   );
 };
 
-const TutorLockedNotice: FC = () => {
-  return null;
-};
-
 const ComposerAction: FC = () => {
   return (
     <div className="aui-composer-action-wrapper relative mx-2 mb-2 flex items-center justify-between">
@@ -219,6 +217,8 @@ const AssistantMessage: FC = () => {
               Fallback: ToolFallback,
               by_name: {
                 display_question: QuestionTrigger,
+                unlock_mark_done: MarkDoneTrigger,
+                mark_goal_complete: MarkGoalTrigger,
                 display_hints: HintStack,
               },
             },

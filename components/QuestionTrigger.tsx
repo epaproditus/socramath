@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useAppStore } from "@/lib/store";
 
 export const QuestionTrigger = ({ args }: { args?: any }) => {
-  const { currentSession, setActiveQuestionId, setTutorUnlocked, setSidebarOpen } = useAppStore();
+  const { currentSession, setActiveQuestionId, setTutorUnlocked, setSidebarOpen, setMarkDoneUnlocked } = useAppStore();
 
   useEffect(() => {
     const questionNumber = args?.question_number || 1;
@@ -17,6 +17,7 @@ export const QuestionTrigger = ({ args }: { args?: any }) => {
       setActiveQuestionId(question.id);
       setTutorUnlocked(false);
       setSidebarOpen(true);
+      setMarkDoneUnlocked(false);
       fetch("/api/student-progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,6 +35,7 @@ export const QuestionTrigger = ({ args }: { args?: any }) => {
     setActiveQuestionId,
     setTutorUnlocked,
     setSidebarOpen,
+    setMarkDoneUnlocked,
   ]);
 
   return null;

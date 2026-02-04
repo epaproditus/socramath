@@ -20,47 +20,7 @@ async function generateSummary(input: {
   confidence?: number | null;
   revisedAnswer?: string | null;
 }) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return null;
-
-  const messages = [
-    {
-      role: "system",
-      content:
-        "You summarize student test-review reflections. Output 2-4 sentences. Include difficulty/confidence, key misconception or gap, and their revised approach. Keep it concise and readable to a teacher.",
-    },
-    {
-      role: "user",
-      content: JSON.stringify({
-        initialReasoning: input.initialReasoning || "",
-        difficulty: input.difficulty ?? null,
-        confidence: input.confidence ?? null,
-        revisedAnswer: input.revisedAnswer || "",
-      }),
-    },
-  ];
-
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages,
-      temperature: 0.2,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("DeepSeek summary error:", errorText);
-    return null;
-  }
-
-  const data = await response.json();
-  return data?.choices?.[0]?.message?.content?.trim() || null;
+  return null;
 }
 
 export async function GET(req: Request) {
@@ -114,17 +74,6 @@ export async function POST(req: Request) {
   });
 
   let summary: string | null | undefined = undefined;
-  const shouldSummarize =
-    !!body.revisedAnswer && (body.forceSummarize || !existing?.summary);
-
-  if (shouldSummarize) {
-    summary = await generateSummary({
-      initialReasoning: body.initialReasoning,
-      difficulty: body.difficulty,
-      confidence: body.confidence,
-      revisedAnswer: body.revisedAnswer,
-    });
-  }
 
   const saved = await prisma.studentResponse.upsert({
     where: {

@@ -19,6 +19,21 @@ type AppState = {
     setStudentResponse: (questionId: string, response: StudentResponse) => void;
     setSidebarOpen: (open: boolean) => void;
     setSidebarWidth: (width: number) => void;
+    markDoneUnlocked: boolean;
+    setMarkDoneUnlocked: (unlocked: boolean) => void;
+    advanceRequestId: number;
+    advanceTargetIndex: number | null;
+    requestAdvance: (targetIndex: number | null) => void;
+    summaryRequestId: number;
+    summaryQuestionId: string | null;
+    requestSummary: (questionId: string | null) => void;
+    nudgeRequestId: number;
+    nudgeMessage: string | null;
+    requestNudge: (message: string) => void;
+    studentGoalsByQuestion: Record<string, string[]>;
+    goalProgressByQuestion: Record<string, boolean[]>;
+    setStudentGoals: (questionId: string, goals: string[]) => void;
+    setGoalProgress: (questionId: string, goalIndex: number, value: boolean) => void;
     // Async Actions
     initialize: () => Promise<void>;
     addQuestion: () => Promise<void>;
@@ -36,6 +51,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     studentResponses: {},
     sidebarOpen: false,
     sidebarWidth: 520,
+    markDoneUnlocked: false,
+    advanceRequestId: 0,
+    advanceTargetIndex: null,
+    summaryRequestId: 0,
+    summaryQuestionId: null,
+    nudgeRequestId: 0,
+    nudgeMessage: null,
     setMode: (mode) => set({ mode }),
     setSession: (session) => set({ currentSession: session }),
     updateSessionTitle: (title) => set((state) => ({ currentSession: { ...state.currentSession, title } })),
@@ -47,6 +69,53 @@ export const useAppStore = create<AppState>((set, get) => ({
         })),
     setSidebarOpen: (open) => set({ sidebarOpen: open }),
     setSidebarWidth: (width) => set({ sidebarWidth: width }),
+    setMarkDoneUnlocked: (unlocked) => set({ markDoneUnlocked: unlocked }),
+    requestAdvance: (targetIndex) =>
+        set((state) => ({
+            advanceRequestId: state.advanceRequestId + 1,
+            advanceTargetIndex: targetIndex
+        })),
+    requestSummary: (questionId) =>
+        set((state) => ({
+            summaryRequestId: state.summaryRequestId + 1,
+            summaryQuestionId: questionId
+        })),
+    requestNudge: (message) =>
+        set((state) => ({
+            nudgeRequestId: state.nudgeRequestId + 1,
+            nudgeMessage: message
+        })),
+    studentGoalsByQuestion: {},
+    goalProgressByQuestion: {},
+    setStudentGoals: (questionId, goals) =>
+        set((state) => {
+            const existingProgress = state.goalProgressByQuestion[questionId];
+            const nextProgress = existingProgress && existingProgress.length === goals.length
+                ? existingProgress
+                : Array.from({ length: goals.length }).map((_, idx) => existingProgress?.[idx] || false);
+
+            if (typeof window !== "undefined") {
+                window.localStorage.setItem(`student-rubric-${questionId}`, JSON.stringify(goals));
+                window.localStorage.setItem(`student-rubric-progress-${questionId}`, JSON.stringify(nextProgress));
+            }
+
+            return {
+                studentGoalsByQuestion: { ...state.studentGoalsByQuestion, [questionId]: goals },
+                goalProgressByQuestion: { ...state.goalProgressByQuestion, [questionId]: nextProgress },
+            };
+        }),
+    setGoalProgress: (questionId, goalIndex, value) =>
+        set((state) => {
+            const current = state.goalProgressByQuestion[questionId] || [];
+            const next = [...current];
+            next[goalIndex] = value;
+            if (typeof window !== "undefined") {
+                window.localStorage.setItem(`student-rubric-progress-${questionId}`, JSON.stringify(next));
+            }
+            return {
+                goalProgressByQuestion: { ...state.goalProgressByQuestion, [questionId]: next },
+            };
+        }),
 
     initialize: async () => {
         try {

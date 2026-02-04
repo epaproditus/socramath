@@ -1,20 +1,37 @@
-import { HelpCircle, ChevronDown, ChevronUp, Book } from "lucide-react";
+import { HelpCircle, ChevronDown, ChevronUp, Book, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import Stack from "./Stack";
 import { useAppStore } from "@/lib/store";
 
 export const QuestionCard = ({ args }: { args?: any }) => {
     const [showVocab, setShowVocab] = useState(false);
-    const { currentSession, activeQuestionId, setActiveQuestionId, setTutorUnlocked, setStudentResponse } = useAppStore();
+    const {
+        currentSession,
+        activeQuestionId,
+        setActiveQuestionId,
+        setTutorUnlocked,
+        setStudentResponse,
+        markDoneUnlocked,
+        setMarkDoneUnlocked,
+        requestAdvance,
+        requestSummary,
+        requestNudge,
+        studentGoalsByQuestion,
+        goalProgressByQuestion,
+        setStudentGoals,
+        setGoalProgress,
+    } = useAppStore();
     const [response, setResponse] = useState<any | null>(null);
     const [loadingResponse, setLoadingResponse] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [showQuestionModal, setShowQuestionModal] = useState(false);
     const [editMode, setEditMode] = useState({
         difficulty: false,
         initialReasoning: false,
         confidence: false,
-        revisedAnswer: false,
     });
+    const [reasoningDraft, setReasoningDraft] = useState("");
+    const [loadingGoals, setLoadingGoals] = useState(false);
 
     const safeArgs = args ?? {};
     const hasArgs = !!safeArgs.text;
@@ -32,6 +49,8 @@ export const QuestionCard = ({ args }: { args?: any }) => {
 
     const questionId = liveQuestion?.id;
     const sessionId = currentSession.id;
+    const goalList = questionId ? studentGoalsByQuestion[questionId] || [] : [];
+    const goalProgress = questionId ? goalProgressByQuestion[questionId] || [] : [];
 
     useEffect(() => {
         if (!questionId || !sessionId) return;
@@ -65,10 +84,71 @@ export const QuestionCard = ({ args }: { args?: any }) => {
     }, [questionId, sessionId, activeQuestionId, setActiveQuestionId, setTutorUnlocked]);
 
     useEffect(() => {
-        if (response?.revisedAnswer && questionId === activeQuestionId) {
+        if (
+            response?.difficulty &&
+            response?.initialReasoning &&
+            response?.confidence &&
+            questionId === activeQuestionId
+        ) {
             setTutorUnlocked(true);
         }
-    }, [response?.revisedAnswer, questionId, activeQuestionId, setTutorUnlocked]);
+    }, [response?.difficulty, response?.initialReasoning, response?.confidence, questionId, activeQuestionId, setTutorUnlocked]);
+
+    useEffect(() => {
+        setReasoningDraft(response?.initialReasoning || "");
+    }, [response?.initialReasoning]);
+
+    useEffect(() => {
+        if (!questionId) return;
+        const key = `student-rubric-${questionId}`;
+        const cached = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+        if (cached) {
+            try {
+                const parsed = JSON.parse(cached);
+                if (Array.isArray(parsed)) {
+                    setStudentGoals(questionId, parsed);
+                    const cachedProgress = window.localStorage.getItem(`student-rubric-progress-${questionId}`);
+                    if (cachedProgress) {
+                        try {
+                            const progress = JSON.parse(cachedProgress);
+                            if (Array.isArray(progress)) {
+                                progress.forEach((value, idx) => setGoalProgress(questionId, idx, !!value));
+                            }
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+                return;
+            } catch {
+                // ignore
+            }
+        }
+        const rubric = liveQuestion?.rubric || safeArgs.rubric || [];
+        const rubricSignature = JSON.stringify(rubric);
+        if (typeof window !== "undefined") {
+            const storedSignature = window.localStorage.getItem(`student-rubric-source-${questionId}`);
+            if (storedSignature && storedSignature !== rubricSignature) {
+                window.localStorage.removeItem(`student-rubric-${questionId}`);
+                window.localStorage.removeItem(`student-rubric-progress-${questionId}`);
+            }
+            window.localStorage.setItem(`student-rubric-source-${questionId}`, rubricSignature);
+        }
+        if (!rubric.length) return;
+        setLoadingGoals(true);
+        fetch("/api/rubric-simplify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rubric }),
+        })
+            .then((res) => res.json())
+            .then((data) => {
+                if (Array.isArray(data.goals)) {
+                    setStudentGoals(questionId, data.goals);
+                }
+            })
+            .finally(() => setLoadingGoals(false));
+    }, [questionId, response?.initialReasoning, safeArgs.rubric]);
 
     const saveResponse = async (partial: any) => {
         if (!questionId || !sessionId) return;
@@ -101,9 +181,7 @@ export const QuestionCard = ({ args }: { args?: any }) => {
             ? "initialReasoning"
             : !response?.confidence
                 ? "confidence"
-                : !response?.revisedAnswer
-                    ? "revisedAnswer"
-                    : "done";
+                : "done";
 
     // Prepare Cards for Stack
     const vocabCards = hasVocab ? vocabulary.map((v: any, i: number) => (
@@ -181,12 +259,17 @@ export const QuestionCard = ({ args }: { args?: any }) => {
                 </div>
             )}
 
-            <div className={`p-4 ${hasImage ? 'grid grid-cols-1 md:grid-cols-2 gap-6' : ''}`}>
+            <div
+                className={`p-4 ${hasImage ? 'grid grid-cols-1 md:grid-cols-2 gap-6' : ''}`}
+            >
 
                 {/* Image Column */}
                 {hasImage && (
                     <div className="flex flex-col gap-2">
-                        <div className="rounded-lg overflow-hidden border border-zinc-100 dark:border-zinc-700 bg-zinc-50 dark:bg-black/20 flex items-center justify-center p-2 h-full min-h-[160px] max-h-[260px]">
+                        <div
+                            className="rounded-lg overflow-hidden border border-zinc-100 dark:border-zinc-700 bg-zinc-50 dark:bg-black/20 flex items-center justify-center p-2 h-full min-h-[160px] max-h-[260px] cursor-zoom-in"
+                            onClick={() => setShowQuestionModal(true)}
+                        >
                             <img
                                 src={safeArgs.image_url}
                                 alt="Question Diagram"
@@ -199,7 +282,10 @@ export const QuestionCard = ({ args }: { args?: any }) => {
 
                 {/* Text Column */}
                 <div className="flex flex-col gap-4">
-                    <div className="prose dark:prose-invert prose-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
+                    <div
+                        className="prose dark:prose-invert prose-sm leading-relaxed text-zinc-800 dark:text-zinc-200 cursor-zoom-in"
+                        onClick={() => setShowQuestionModal(true)}
+                    >
                         {safeArgs.text}
                     </div>
                 </div>
@@ -281,16 +367,25 @@ export const QuestionCard = ({ args }: { args?: any }) => {
                                         <textarea
                                             className="w-full h-16 p-2 text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
                                             placeholder="Explain your approach before seeing any answer..."
-                                            defaultValue={response?.initialReasoning || ""}
-                                            onBlur={async (e) => {
-                                                const value = e.target.value.trim();
-                                                if (value) {
-                                                    await saveResponse({ initialReasoning: value });
-                                                    setEditMode({ ...editMode, initialReasoning: false });
-                                                }
-                                            }}
+                                            value={reasoningDraft}
+                                            onChange={(e) => setReasoningDraft(e.target.value)}
                                         />
-                                        <p className="text-[10px] text-zinc-400">Click outside the box to save.</p>
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[10px] text-zinc-400">Click submit to save.</p>
+                                            <button
+                                                className="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+                                                onClick={async () => {
+                                                    const value = reasoningDraft.trim();
+                                                    if (!value) return;
+                                                    await saveResponse({ initialReasoning: value, forceSummarize: true });
+                                                    setEditMode({ ...editMode, initialReasoning: false });
+                                                    requestNudge("I finished the \"How would you solve it\" step.");
+                                                }}
+                                                disabled={saving}
+                                            >
+                                                Submit
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -337,66 +432,85 @@ export const QuestionCard = ({ args }: { args?: any }) => {
                                 </div>
                             )}
 
-                            {/* Revised Answer */}
-                            {nextStep !== "difficulty" && nextStep !== "initialReasoning" && (
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-semibold uppercase text-zinc-500">Revised Answer</span>
-                                        {response?.revisedAnswer && !editMode.revisedAnswer && (
-                                            <button
-                                                className="text-[10px] text-indigo-500 hover:underline"
-                                                onClick={() => setEditMode({ ...editMode, revisedAnswer: true })}
-                                            >
-                                                Edit
-                                            </button>
-                                        )}
-                                    </div>
-                                    {response?.revisedAnswer && !editMode.revisedAnswer && (
-                                        <p className="text-sm text-zinc-700 dark:text-zinc-300 line-clamp-3">
-                                            {response.revisedAnswer}
-                                        </p>
-                                    )}
-                                    {(!response?.revisedAnswer || editMode.revisedAnswer) && (
-                                        <div className="space-y-2">
-                                            <textarea
-                                                className="w-full h-16 p-2 text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
-                                                placeholder="Update your answer after reflecting..."
-                                                defaultValue={response?.revisedAnswer || ""}
-                                                onBlur={async (e) => {
-                                                    const value = e.target.value.trim();
-                                                    if (value) {
-                                                        await saveResponse({ revisedAnswer: value, forceSummarize: true });
-                                                        setEditMode({ ...editMode, revisedAnswer: false });
-                                                    }
-                                                }}
-                                            />
-                                            <p className="text-[10px] text-zinc-400">Click outside the box to save.</p>
-                                        </div>
-                                    )}
+                            {goalList.length > 0 && (
+                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                    <p className="text-[10px] font-bold uppercase text-zinc-500 mb-2">Goals For This Question</p>
+                                    <ul className="space-y-1 text-sm text-zinc-700 dark:text-zinc-300">
+                                        {goalList.map((goal, idx) => {
+                                            const done = goalProgress[idx];
+                                            return (
+                                            <li key={idx} className={`flex items-start gap-2 ${done ? "opacity-50" : ""}`}>
+                                                <span className={`mt-1 h-1.5 w-1.5 rounded-full ${done ? "bg-emerald-500" : "bg-indigo-500"}`} />
+                                                <span className={done ? "line-through" : ""}>{goal}</span>
+                                            </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
+                            {loadingGoals && (
+                                <p className="text-[10px] text-zinc-400">Loading goals…</p>
+                            )}
+
+                            {markDoneUnlocked && nextStep === "done" && (
+                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                    <button
+                                        className="w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                                        onClick={async () => {
+                                            await saveResponse({ forceSummarize: true });
+                                            const currentIndex = currentSession.questions.findIndex((q) => q.id === questionId);
+                                            const nextIndex = Math.min(currentSession.questions.length - 1, currentIndex + 1);
+                                            const nextQuestion = currentSession.questions[nextIndex];
+                                            if (nextQuestion?.id && nextQuestion.id !== questionId) {
+                                                setTutorUnlocked(false);
+                                                setMarkDoneUnlocked(false);
+                                                requestSummary(questionId || null);
+                                                requestAdvance(nextIndex + 1);
+                                            }
+                                        }}
+                                    >
+                                        Mark as Done → Next Question
+                                    </button>
                                 </div>
                             )}
 
-                            {/* Summary */}
-                            {response?.summary && (
-                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                    <p className="text-[10px] font-bold uppercase text-zinc-500 mb-1">Summary</p>
-                                    <p className="text-sm text-zinc-700 dark:text-zinc-300">{response.summary}</p>
-                                </div>
-                            )}
+                            {/* Revised Answer removed */}
 
-                            {/* Original Test Answer */}
-                            {safeArgs.student_response && response?.initialReasoning && (
-                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                    <p className="text-[10px] font-bold uppercase text-zinc-500 mb-1">Original Answer (From Test)</p>
-                                    <p className="text-sm italic text-zinc-600 dark:text-zinc-400">
-                                        "{safeArgs.student_response}"
-                                    </p>
-                                </div>
-                            )}
+                            {/* Summary hidden in student view */}
                         </div>
                     )}
                 </div>
-            </div>
         </div>
+        {showQuestionModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+                <div className="w-full max-w-4xl max-h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+                        <span className="text-xs font-semibold uppercase text-zinc-500">Question {currentQuestionIndex}</span>
+                        <button
+                            onClick={() => setShowQuestionModal(false)}
+                            className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            aria-label="Close"
+                        >
+                            <X className="w-4 h-4 text-zinc-500" />
+                        </button>
+                    </div>
+                    <div className="p-6 overflow-y-auto space-y-4">
+                        {hasImage && (
+                            <div className="w-full flex items-center justify-center">
+                                <img
+                                    src={safeArgs.image_url}
+                                    alt="Question Diagram"
+                                    className="max-h-[60vh] w-auto object-contain"
+                                />
+                            </div>
+                        )}
+                        <div className="prose dark:prose-invert text-zinc-800 dark:text-zinc-200">
+                            {safeArgs.text}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+    </div>
     );
 };

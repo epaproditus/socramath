@@ -355,13 +355,14 @@ export async function fetchSessionProgress(sessionId: string) {
                     progress: {},
                 };
             }
-            const hasRevised = !!r.revisedAnswer;
-            const hasAny = !!(r.initialReasoning || r.difficulty || r.confidence || r.originalAnswer || r.revisedAnswer);
+            const hasCompleted = !!(r.initialReasoning && r.difficulty && r.confidence);
+            const hasAny = !!(r.initialReasoning || r.difficulty || r.confidence || r.originalAnswer);
             studentMap[user.id].progress[r.questionId] = {
-                status: hasRevised ? "completed" : hasAny ? "in_progress" : "not_started",
+                status: hasCompleted ? "completed" : hasAny ? "in_progress" : "not_started",
                 originalAnswer: r.originalAnswer || "",
                 revisedAnswer: r.revisedAnswer || "",
                 correctAnswer: keyByQuestionId.get(r.questionId) || "",
+                summary: r.summary || "",
             };
         });
 
@@ -389,6 +390,93 @@ export async function setStudentCurrentQuestion(sessionId: string, questionIndex
         update: { currentQuestionIndex: questionIndex },
         create: { sessionId, userId: session.user.id, currentQuestionIndex: questionIndex },
     });
+}
+
+export async function getAppConfig() {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const config = await prisma.appConfig.findFirst();
+    return {
+        baseUrl: config?.baseUrl || "",
+        apiKey: config?.apiKey || "",
+        model: config?.model || "",
+    };
+}
+
+export async function saveAppConfig(input: { baseUrl: string; apiKey: string; model: string }) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    const existing = await prisma.appConfig.findFirst();
+    if (!existing) {
+        await prisma.appConfig.create({
+            data: {
+                baseUrl: input.baseUrl || null,
+                apiKey: input.apiKey || null,
+                model: input.model || null,
+            },
+        });
+        return;
+    }
+
+    await prisma.appConfig.update({
+        where: { id: existing.id },
+        data: {
+            baseUrl: input.baseUrl || null,
+            apiKey: input.apiKey || null,
+            model: input.model || null,
+        },
+    });
+}
+
+export async function fetchModelList(baseUrl: string, apiKey: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (!baseUrl) return [];
+    const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+    const url = `${normalizedBase}/v1/models`;
+    const res = await fetch(url, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to fetch models");
+    }
+    const data = await res.json();
+    const models = Array.isArray(data?.data) ? data.data : [];
+    return models.map((m: any) => m.id).filter(Boolean);
 }
 
 export async function setActiveSession(sessionId: string) {
@@ -715,6 +803,26 @@ export async function updateQuestionAction(questionId: string, field: string, va
     await prisma.question.update({
         where: { id: questionId },
         data
+    });
+}
+
+export async function updateSessionTitleAction(sessionId: string, title: string) {
+    const session = await auth();
+    const adminEmail = process.env.ADMIN_EMAIL;
+
+    const adminUser = adminEmail
+        ? await prisma.user.findUnique({ where: { email: adminEmail } })
+        : null;
+
+    const targetUserId = adminUser?.id || session?.user?.id;
+
+    if (!targetUserId) {
+        throw new Error("Unauthorized");
+    }
+
+    await prisma.testSession.update({
+        where: { id: sessionId },
+        data: { title },
     });
 }
 

@@ -3,15 +3,18 @@
 import { useLocalRuntime, AssistantRuntimeProvider, ComposerPrimitive, ThreadPrimitive, MessagePrimitive } from "@assistant-ui/react";
 import { Thread } from "@/components/assistant-ui/thread";
 import { useAppStore } from "@/lib/store";
-import { Link2 } from "lucide-react";
+import { Link2, Calculator, X } from "lucide-react";
 import Link from "next/link";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 
 export default function Home() {
-  const { currentSession, initialize, studentResponses, sidebarOpen, sidebarWidth, setSidebarWidth, activeQuestionId } = useAppStore();
+  const { currentSession, initialize, studentResponses, sidebarOpen, sidebarWidth, setSidebarWidth, activeQuestionId, advanceRequestId, advanceTargetIndex, summaryRequestId, summaryQuestionId, nudgeRequestId, nudgeMessage, setGoalProgress } = useAppStore();
   const sessionRef = useRef(currentSession);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcLarge, setCalcLarge] = useState(false);
+  const [calcSide, setCalcSide] = useState<"left" | "right">("right");
 
   useEffect(() => {
     initialize();
@@ -20,6 +23,34 @@ export default function Home() {
   useEffect(() => {
     sessionRef.current = currentSession;
   }, [currentSession]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("calc-state");
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (typeof parsed.open === "boolean") setCalcOpen(parsed.open);
+      if (parsed.side === "left" || parsed.side === "right") setCalcSide(parsed.side);
+      if (typeof parsed.large === "boolean") setCalcLarge(parsed.large);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "calc-state",
+      JSON.stringify({ open: calcOpen, side: calcSide, large: calcLarge })
+    );
+  }, [calcOpen, calcSide, calcLarge]);
+
+  // bottom-left / bottom-right toggle only
+
+  const runtimeRef = useRef<any>(null);
+  const messageIndexRef = useRef(0);
+  const questionStartIndexRef = useRef<Record<string, number>>({});
 
   // 1. Initial Load from localStorage (mock)
   const runtime = useLocalRuntime({
@@ -40,9 +71,13 @@ export default function Home() {
             .map((c: any) => c.text)
             .join('');
 
+          if (!textContent && toolCalls.length === 0) {
+            return [];
+          }
+
           const assistantMsg: any = {
             role: 'assistant',
-            content: textContent || null // DeepSeek might prefer null if tool_calls exist
+            content: textContent || "" // keep non-null for API validation
           };
 
           if (toolCalls.length > 0) {
@@ -90,8 +125,7 @@ export default function Home() {
       const reviewComplete = !!(
         activeResponse?.difficulty &&
         activeResponse?.initialReasoning &&
-        activeResponse?.confidence &&
-        activeResponse?.revisedAnswer
+        activeResponse?.confidence
       );
 
       // System Prompt - NOW DYNAMIC FROM STORE
@@ -100,20 +134,27 @@ export default function Home() {
         content: `You are a Socratic Test Review Coach.
 
         CONTEXT:
-        - The student already completed a structured review card for each question (difficulty, initial reasoning, confidence, revised answer).
+        - The student already completed a structured review card for each question (difficulty, initial reasoning, confidence).
         - Your job is to deepen their understanding, not to collect those fields again.
 
         INSTRUCTIONS:
-        1. STARTING: Call 'display_question' for Question 1 (index 1).
+        1. STARTING: Call 'display_question' for the student's current question if provided, otherwise Question 1.
         2. For the active question:
            - Assume you can see the student's review card responses.
            - Do NOT ask for their original answer, difficulty, or confidence.
-           - If the review is incomplete, gently direct the student to finish the review card before continuing.
-           - If the review is complete, sanity-check their revised answer against the rubric:
-             - If it already matches, explicitly say it's correct and explain why in 1-2 sentences, then move on.
+           - If the review is incomplete, direct the student to finish the review card before continuing.
+           - If the review is complete, sanity-check their reasoning against the rubric:
+             - If it already matches, confirm progress without giving the full answer. Ask them to state the key idea in their own words.
              - If it doesn't, ask one focused question that targets the misconception.
            - Use the rubric to guide them.
-           - Encourage them to refine their revised answer only if it is not correct.
+           - Goals are derived from the rubric in the same order; use goal_index to match that order.
+           - Encourage them to refine their reasoning only if it is not correct.
+           - NEVER give the final answer directly or reveal the answer key. Guide with questions and hints only.
+           - Be strict: do not mark them as done unless they meet all rubric points.
+           - If they meet a rubric goal, call 'mark_goal_complete' with the goal index.
+           - If they meet all rubric points, call 'unlock_mark_done' for the current question.
+           - Do not mention their original test answer until they have completed the reflection steps.
+           - Use 7th-grade vocabulary and sentence structure.
         3. When they demonstrate understanding, say "Great job!" and move to the next question.
         4. Keep messages concise and focused.
 
@@ -123,6 +164,7 @@ export default function Home() {
         Questions: ${JSON.stringify(currentSession.questions)}
         Active Question Id: ${activeQuestionId || "none"}
         Pacing Lock (max question index): ${currentSession.studentLockIndex ?? currentSession.lockQuestionIndex ?? "none"}
+        Student Current Question Index: ${currentSession.studentCurrentIndex ?? "none"}
         Active Review Complete: ${reviewComplete}
         Active Review Response:
         ${JSON.stringify(activeResponse || null)}
@@ -132,7 +174,7 @@ export default function Home() {
         `
       };
       const payload = {
-        model: "deepseek-chat",
+        model: "",
         messages: [systemMessage, ...apiMessages],
         stream: true,
         tools: [
@@ -152,19 +194,69 @@ export default function Home() {
                 required: ["question_number", "text", "student_response"]
               }
             }
+          },
+          {
+            type: "function",
+            function: {
+              name: "unlock_mark_done",
+              description: "Enable the Mark as Done button for the current question when rubric is met.",
+              parameters: {
+                type: "object",
+                properties: {
+                  question_number: { type: "number", description: "The 1-based index of the question" }
+                },
+                required: ["question_number"]
+              }
+            }
+          }
+          ,
+          {
+            type: "function",
+            function: {
+              name: "mark_goal_complete",
+              description: "Mark a specific student-facing goal as completed for the current question.",
+              parameters: {
+                type: "object",
+                properties: {
+                  question_number: { type: "number", description: "The 1-based index of the question" },
+                  goal_index: { type: "number", description: "0-based index of the goal" }
+                },
+                required: ["question_number", "goal_index"]
+              }
+            }
           }
         ]
       };
 
       // 2. Fetch
-      const response = await fetch('/api/manual-chat', {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: abortSignal,
-      });
+      let response: Response;
+      try {
+        response = await fetch('/api/manual-chat', {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: abortSignal,
+        });
+      } catch (err) {
+        console.error("Failed to fetch /api/manual-chat", err);
+        yield {
+          content: [
+            { type: "text", text: "I couldn't reach the tutor right now. Please try again in a moment." }
+          ]
+        };
+        return;
+      }
 
-      if (!response.body) return;
+      if (!response.ok || !response.body) {
+        const errorText = await response.text().catch(() => "");
+        console.error("manual-chat error", response.status, errorText);
+        yield {
+          content: [
+            { type: "text", text: "The tutor is unavailable right now. Please try again in a moment." }
+          ]
+        };
+        return;
+      }
 
       // 3. Handle Stream
       const reader = response.body.getReader();
@@ -247,7 +339,10 @@ export default function Home() {
 
         // HYDRATE FROM SOURCE OF TRUTH (Store)
         // usage: question_number is 1-based index
-        const qIndex = (generatedArgs.question_number || 1) - 1;
+        const preferred = currentSession.studentCurrentIndex || 1;
+        const requested = generatedArgs.question_number || 1;
+        const finalNumber = requested === 1 && preferred > 1 ? preferred : requested;
+        const qIndex = finalNumber - 1;
         const realQuestion = currentSession.questions[qIndex] || currentSession.questions[0];
 
         // Merge LLM args (which might be hallucinated or incomplete) with Real Data
@@ -256,7 +351,7 @@ export default function Home() {
           // Enforce real data:
           text: realQuestion.text,
           image_url: realQuestion.image_url,
-          student_response: realQuestion.student_response,
+          student_response: responseMap?.[realQuestion.id]?.originalAnswer || "",
           // Meta:
           question_number: qIndex + 1,
           total_questions: currentSession.questions.length
@@ -276,11 +371,162 @@ export default function Home() {
           ]
         };
       }
+
+      if (currentToolCall.id && (currentToolCall.name === "unlock_mark_done" || currentToolCall.name.includes("unlock_mark_done"))) {
+        let generatedArgs: any = { question_number: 1 };
+        try {
+          generatedArgs = JSON.parse(currentToolCall.args);
+        } catch (e) {
+          console.error("JSON parse error", e);
+        }
+
+        yield {
+          content: [
+            { type: "text", text: currentText },
+            {
+              type: "tool-call",
+              toolCallId: currentToolCall.id,
+              toolName: "unlock_mark_done",
+              argsText: currentToolCall.args,
+              args: generatedArgs,
+              result: { unlocked: true }
+            }
+          ]
+        };
+      }
+
+      if (currentToolCall.id && (currentToolCall.name === "mark_goal_complete" || currentToolCall.name.includes("mark_goal_complete"))) {
+        let generatedArgs: any = { question_number: 1, goal_index: 0 };
+        try {
+          generatedArgs = JSON.parse(currentToolCall.args);
+        } catch (e) {
+          console.error("JSON parse error", e);
+        }
+
+        const qIndex = Math.max(1, Number(generatedArgs.question_number || 1)) - 1;
+        const qId = currentSession.questions[qIndex]?.id;
+        if (qId && typeof generatedArgs.goal_index === "number") {
+          setGoalProgress(qId, generatedArgs.goal_index, true);
+        }
+
+        yield {
+          content: [
+            { type: "text", text: currentText },
+            {
+              type: "tool-call",
+              toolCallId: currentToolCall.id,
+              toolName: "mark_goal_complete",
+              argsText: currentToolCall.args,
+              args: generatedArgs,
+              result: { marked: true }
+            }
+          ]
+        };
+      }
     },
   });
 
+  useEffect(() => {
+    runtimeRef.current = runtime;
+  }, [runtime]);
+
+  useEffect(() => {
+    if (!runtimeRef.current) return;
+    const rt = runtimeRef.current;
+    const unsub = rt.thread.subscribe(() => {
+      const state = rt.thread.getState();
+      const msgs = state.messages || [];
+      for (let i = messageIndexRef.current; i < msgs.length; i += 1) {
+        const m = msgs[i];
+        if (m?.role !== "assistant") continue;
+        const content = Array.isArray(m.content) ? m.content : [];
+        const tool = content.find((c: any) => c.type === "tool-call" && (c.toolName === "display_question" || String(c.toolName || "").includes("display_question")));
+        if (!tool) continue;
+        let qnum = tool.args?.question_number;
+        if (!qnum && tool.argsText) {
+          try {
+            const parsed = JSON.parse(tool.argsText);
+            qnum = parsed.question_number;
+          } catch {
+            qnum = undefined;
+          }
+        }
+        const idx = Math.max(1, Number(qnum || 1)) - 1;
+        const qId = currentSession.questions[idx]?.id;
+        if (qId) {
+          questionStartIndexRef.current[qId] = i;
+        }
+      }
+      messageIndexRef.current = msgs.length;
+    });
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [runtime, currentSession.questions]);
+
+  useEffect(() => {
+    if (!advanceRequestId) return;
+    const target = advanceTargetIndex || currentSession.studentCurrentIndex || 1;
+    const rt = runtimeRef.current;
+    if (!rt?.thread) return;
+    rt.thread.append({
+      role: "user",
+      content: `I completed this question. Please move me to Question ${target}.`,
+    });
+    rt.thread.startRun(null);
+  }, [advanceRequestId, advanceTargetIndex, currentSession.studentCurrentIndex]);
+
+  useEffect(() => {
+    if (!summaryRequestId) return;
+    const questionId = summaryQuestionId;
+    if (!questionId) return;
+    const rt = runtimeRef.current;
+    if (!rt?.thread) return;
+    const msgs = rt.thread.getState().messages || [];
+    const start = questionStartIndexRef.current[questionId] ?? 0;
+    const slice = msgs.slice(start);
+    const transcript = slice.flatMap((m: any) => {
+      if (m.role === "user") {
+        if (typeof m.content === "string") return [`User: ${m.content}`];
+        if (Array.isArray(m.content)) {
+          const text = m.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join(" ");
+          return text ? [`User: ${text}`] : [];
+        }
+      }
+      if (m.role === "assistant") {
+        if (typeof m.content === "string") return [`Assistant: ${m.content}`];
+        if (Array.isArray(m.content)) {
+          const text = m.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join(" ");
+          return text ? [`Assistant: ${text}`] : [];
+        }
+      }
+      return [];
+    });
+
+    fetch("/api/chat-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: currentSession.id,
+        questionId,
+        transcript,
+      }),
+    }).catch(() => {});
+  }, [summaryRequestId, summaryQuestionId, currentSession.id]);
+
+  useEffect(() => {
+    if (!nudgeRequestId || !nudgeMessage) return;
+    const rt = runtimeRef.current;
+    if (!rt?.thread) return;
+    rt.thread.append({
+      role: "user",
+      content: nudgeMessage,
+    });
+    rt.thread.startRun(null);
+  }, [nudgeRequestId, nudgeMessage]);
+
   return (
-    <div className="fixed inset-0 h-dvh w-full bg-white dark:bg-zinc-950 flex flex-col">
+    <div className="fixed inset-0 h-dvh w-full bg-white dark:bg-zinc-950 flex flex-col min-h-0">
       {/* Main Header */}
       <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 pointer-events-none">
         {/* Left: Brand or Empty */}
@@ -293,13 +539,13 @@ export default function Home() {
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row pt-12">
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 min-h-0">
           <AssistantRuntimeProvider runtime={runtime}>
             <Thread />
           </AssistantRuntimeProvider>
         </div>
         <aside
-          className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
+          className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
           style={sidebarOpen ? { width: sidebarWidth } : undefined}
         >
           {sidebarOpen && (
@@ -338,6 +584,50 @@ export default function Home() {
       <Link href="/teacher" className="fixed bottom-4 left-4 p-3 bg-zinc-100 dark:bg-zinc-900 rounded-full shadow-lg hover:scale-110 transition-transform text-zinc-500 hover:text-indigo-600 z-50">
         <Link2 className="w-5 h-5" />
       </Link>
+
+      <button
+        onClick={() => setCalcOpen((v) => !v)}
+        className={`fixed z-50 h-12 w-12 rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 flex items-center justify-center ${calcSide === "right" ? "bottom-4 right-4" : "bottom-4 left-4"}`}
+        aria-label="Toggle calculator"
+      >
+        <Calculator className="w-5 h-5" />
+      </button>
+
+      <div
+        className={`fixed z-40 ${calcSide === "right" ? "bottom-4 right-20" : "bottom-4 left-20"} ${calcOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"} transition-opacity duration-150`}
+      >
+        <div className={`${calcLarge ? "w-[720px] h-[70vh]" : "w-[520px] h-[620px]"} bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden flex flex-col`}>
+          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200 dark:border-zinc-800">
+            <span className="text-xs font-semibold uppercase text-zinc-500">Desmos Calculator</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCalcSide((s) => (s === "right" ? "left" : "right"))}
+                className="text-[11px] text-zinc-500 hover:text-zinc-700"
+              >
+                {calcSide === "right" ? "Dock Left" : "Dock Right"}
+              </button>
+              <button
+                onClick={() => setCalcLarge((v) => !v)}
+                className="text-[11px] text-zinc-500 hover:text-zinc-700"
+              >
+                {calcLarge ? "Compact" : "Large"}
+              </button>
+              <button
+                onClick={() => setCalcOpen(false)}
+                className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                aria-label="Close calculator"
+              >
+                <X className="w-4 h-4 text-zinc-500" />
+              </button>
+            </div>
+          </div>
+          <iframe
+            src="https://www.desmos.com/testing/texas/graphing"
+            className="w-full flex-1 border-none"
+            title="Desmos Calculator"
+          />
+        </div>
+      </div>
     </div>
   );
 }

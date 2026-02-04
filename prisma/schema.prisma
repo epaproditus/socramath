@@ -144,3 +144,12 @@ model StudentSessionState {
 
   @@unique([sessionId, userId])
 }
+
+model AppConfig {
+  id        String   @id @default(cuid())
+  baseUrl   String?
+  apiKey    String?
+  model     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

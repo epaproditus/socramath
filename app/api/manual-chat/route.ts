@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-
 import { auth } from "@/auth";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
     const session = await auth();
@@ -10,22 +12,25 @@ export async function POST(req: Request) {
 
     try {
         const body = await req.json();
-        const apiKey = process.env.DEEPSEEK_API_KEY;
-        console.log("DEBUG: Using API Key ending in:", apiKey ? apiKey.slice(-4) : "NONE");
-
+        const config = await prisma.appConfig.findFirst();
+        const apiKey = config?.apiKey || process.env.DEEPSEEK_API_KEY || "";
+        const baseUrl = config?.baseUrl || "https://api.deepseek.com";
 
         if (!apiKey) {
             return new NextResponse('Missing API Key', { status: 500 });
         }
 
-        // Forward to DeepSeek
-        const response = await fetch('https://api.deepseek.com/chat/completions', {
+        const endpoint = `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify({
+                ...body,
+                model: config?.model || body?.model || "deepseek-chat",
+            }),
         });
 
         if (!response.ok) {

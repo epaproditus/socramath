@@ -1,7 +1,7 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
-import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix, setActiveSession, deleteSessionAction, setAnswerKey, fetchSessionProgress, setSessionLock, setStudentLock } from "@/app/actions";
+import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix, setActiveSession, deleteSessionAction, setAnswerKey, fetchSessionProgress, setSessionLock, setStudentLock, updateSessionTitleAction, getAppConfig, saveAppConfig, fetchModelList } from "@/app/actions";
 import { ArrowLeft, Sparkles, Plus, Trash2, Upload, CheckCircle2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
@@ -19,12 +19,13 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
     const [answerMatrixLoading, setAnswerMatrixLoading] = useState(false);
     const [progressData, setProgressData] = useState<{
         questions: { id: string; text: string; orderIndex: number }[];
-        students: { id: string; name: string; classPeriod: string; localId?: string | null; lockQuestionIndex?: number | null; progress: Record<string, { status: string; originalAnswer: string; revisedAnswer: string; correctAnswer: string; }> }[];
+        students: { id: string; name: string; classPeriod: string; localId?: string | null; lockQuestionIndex?: number | null; progress: Record<string, { status: string; originalAnswer: string; revisedAnswer: string; correctAnswer: string; summary?: string; }> }[];
         lockQuestionIndex: number | null;
     } | null>(null);
     const [progressLoading, setProgressLoading] = useState(false);
     const [editingAnswerKey, setEditingAnswerKey] = useState(false);
     const [answerKeyDraft, setAnswerKeyDraft] = useState("");
+    const [rubricLoading, setRubricLoading] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [importing, setImporting] = useState(false);
     const [previewRows, setPreviewRows] = useState<any[]>([]);
@@ -49,6 +50,12 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
         students: { id: string; name: string; email?: string | null; localId?: string | null; answers: number; missing: number }[];
     } | null>(null);
     const [studentSummaryLoading, setStudentSummaryLoading] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [configDraft, setConfigDraft] = useState({ baseUrl: "", apiKey: "", model: "" });
+    const [modelOptions, setModelOptions] = useState<string[]>([]);
+    const [modelLoading, setModelLoading] = useState(false);
+    const [configSaving, setConfigSaving] = useState(false);
+    const [configError, setConfigError] = useState<string | null>(null);
 
     const handleRubricChange = (ruleIndex: number, value: string) => {
         if (!activeQuestion) return;
@@ -260,6 +267,39 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
         updateQuestion(activeQuestionIndex, 'rubric', [...activeQuestion.rubric, ""]);
     };
 
+    const removeCriterion = (ruleIndex: number) => {
+        if (!activeQuestion) return;
+        const next = activeQuestion.rubric.filter((_, idx) => idx !== ruleIndex);
+        updateQuestion(activeQuestionIndex, 'rubric', next);
+    };
+
+    const loadConfig = async () => {
+        try {
+            const data = await getAppConfig();
+            setConfigDraft({
+                baseUrl: data.baseUrl || "",
+                apiKey: data.apiKey || "",
+                model: data.model || "",
+            });
+        } catch (err) {
+            console.error("Failed to load app config", err);
+        }
+    };
+
+    const loadModels = async (baseUrl: string, apiKey: string) => {
+        if (!baseUrl) return;
+        try {
+            setModelLoading(true);
+            const models = await fetchModelList(baseUrl, apiKey);
+            setModelOptions(models || []);
+        } catch (err: any) {
+            setModelOptions([]);
+            setConfigError(err?.message || "Failed to fetch models");
+        } finally {
+            setModelLoading(false);
+        }
+    };
+
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col">
@@ -276,10 +316,28 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                         className="text-lg font-bold bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded px-2"
                         value={currentSession.title}
                         onChange={(e) => updateSessionTitle(e.target.value)}
+                        onBlur={async (e) => {
+                            try {
+                                await updateSessionTitleAction(currentSession.id, e.target.value);
+                                loadSessions();
+                            } catch (err) {
+                                console.error("Failed to update session title", err);
+                            }
+                        }}
                     />
                 </div>
                 {mode === "prep" && (
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                setSettingsOpen(true);
+                                setConfigError(null);
+                                loadConfig();
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 border border-zinc-200 text-zinc-700 hover:bg-zinc-100 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            <span>Settings</span>
+                        </button>
                         <button
                             onClick={() => setImportOpen(true)}
                             className="flex items-center gap-2 px-3 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors"
@@ -578,14 +636,21 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                                                     </>
                                                 )}
                                             </div>
-                                            <div className="max-h-[220px] overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 space-y-2 text-xs">
+                                            <div className="max-h-[260px] overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 space-y-2 text-xs">
                                                 {progressData.students.map((s) => {
                                                     const cell = s.progress[q.id];
                                                     if (!cell?.originalAnswer) return null;
                                                     return (
-                                                        <div key={s.id} className="flex items-start justify-between gap-3">
-                                                            <div className="text-zinc-700 dark:text-zinc-200">{s.name}</div>
-                                                            <div className="text-zinc-500 dark:text-zinc-400 flex-1 text-right">{cell.originalAnswer}</div>
+                                                        <div key={s.id} className="flex flex-col gap-1 border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="text-zinc-700 dark:text-zinc-200">{s.name}</div>
+                                                                <div className="text-zinc-500 dark:text-zinc-400 flex-1 text-right">{cell.originalAnswer}</div>
+                                                            </div>
+                                                            {cell.summary && (
+                                                                <div className="text-[10px] text-zinc-400">
+                                                                    {cell.summary}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
@@ -755,15 +820,7 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                                         )}
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-semibold uppercase text-zinc-500">Student's Wrong Answer</label>
-                                        <textarea
-                                            className="w-full h-24 p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none text-sm"
-                                            value={activeQuestion.student_response}
-                                            onChange={(e) => updateQuestion(activeQuestionIndex, 'student_response', e.target.value)}
-                                            placeholder="What did they get wrong?"
-                                        />
-                                    </div>
+                                    {/* student wrong answer handled per-student, not per-question */}
                                 </div>
 
                                 {/* Right: Rubric & Vocab */}
@@ -771,7 +828,34 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                                     <div className="space-y-4 bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
                                         <div className="flex items-center justify-between">
                                             <label className="text-xs font-semibold uppercase text-zinc-500">Rubric Criteria</label>
-                                            <button onClick={addCriterion} className="text-xs text-indigo-500 font-medium hover:underline">+ Add Rule</button>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!activeQuestion?.text?.trim()) return;
+                                                        try {
+                                                            setRubricLoading(true);
+                                                            const res = await fetch("/api/rubric-generate", {
+                                                                method: "POST",
+                                                                headers: { "Content-Type": "application/json" },
+                                                                body: JSON.stringify({ question: activeQuestion.text }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const data = await res.json();
+                                                                if (Array.isArray(data.rubric)) {
+                                                                    updateQuestion(activeQuestionIndex, 'rubric', data.rubric);
+                                                                }
+                                                            }
+                                                        } finally {
+                                                            setRubricLoading(false);
+                                                        }
+                                                    }}
+                                                    className="text-xs text-indigo-500 font-medium hover:underline"
+                                                    disabled={rubricLoading || !activeQuestion?.text?.trim()}
+                                                >
+                                                    {rubricLoading ? "Generating..." : "Generate"}
+                                                </button>
+                                                <button onClick={addCriterion} className="text-xs text-indigo-500 font-medium hover:underline">+ Add Rule</button>
+                                            </div>
                                         </div>
                                         <div className="space-y-2">
                                             {activeQuestion.rubric.map((rule, idx) => (
@@ -782,6 +866,13 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                                                         value={rule}
                                                         onChange={(e) => handleRubricChange(idx, e.target.value)}
                                                     />
+                                                    <button
+                                                        onClick={() => removeCriterion(idx)}
+                                                        className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-rose-500"
+                                                        aria-label="Remove rubric item"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
@@ -996,6 +1087,100 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                         </div>
                     </div>
                 </div>
+            )}
+            {settingsOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+                        <div>
+                            <h3 className="text-sm font-semibold">LLM Settings</h3>
+                            <p className="text-xs text-zinc-500">Set your base URL and API key to fetch available models.</p>
+                        </div>
+                        <button
+                            onClick={() => setSettingsOpen(false)}
+                            className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-semibold uppercase text-zinc-500">Base URL</label>
+                            <input
+                                className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm"
+                                placeholder="https://api.openai.com"
+                                value={configDraft.baseUrl}
+                                onChange={(e) => setConfigDraft({ ...configDraft, baseUrl: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-semibold uppercase text-zinc-500">API Key</label>
+                            <input
+                                type="password"
+                                className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm"
+                                placeholder="sk-..."
+                                value={configDraft.apiKey}
+                                onChange={(e) => setConfigDraft({ ...configDraft, apiKey: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-semibold uppercase text-zinc-500">Model</label>
+                                <button
+                                    onClick={() => loadModels(configDraft.baseUrl, configDraft.apiKey)}
+                                    className="text-[11px] text-indigo-500 hover:underline"
+                                    disabled={modelLoading}
+                                >
+                                    {modelLoading ? "Loading..." : "Fetch models"}
+                                </button>
+                            </div>
+                            <select
+                                className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm"
+                                value={configDraft.model}
+                                onChange={(e) => setConfigDraft({ ...configDraft, model: e.target.value })}
+                            >
+                                <option value="">Select a model</option>
+                                {modelOptions.map((m) => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                        </div>
+                        {configError && (
+                            <p className="text-xs text-rose-500">{configError}</p>
+                        )}
+                    </div>
+                    <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-end gap-2">
+                        <button
+                            onClick={() => setSettingsOpen(false)}
+                            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    setConfigSaving(true);
+                                    setConfigError(null);
+                                    await saveAppConfig({
+                                        baseUrl: configDraft.baseUrl,
+                                        apiKey: configDraft.apiKey,
+                                        model: configDraft.model,
+                                    });
+                                    setSettingsOpen(false);
+                                } catch (err: any) {
+                                    setConfigError(err?.message || "Failed to save settings");
+                                } finally {
+                                    setConfigSaving(false);
+                                }
+                            }}
+                            className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                            disabled={configSaving}
+                        >
+                            {configSaving ? "Saving..." : "Save"}
+                        </button>
+                    </div>
+                </div>
+            </div>
             )}
         </div>
     );
