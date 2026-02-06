@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import TeacherDashboard from "@/components/TeacherDashboard";
+import TeacherHub from "@/components/TeacherHub";
 import { SignIn } from "@/components/SignIn";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -37,5 +37,5 @@ export default async function TeacherPage() {
         );
     }
 
-    return <TeacherDashboard mode="prep" />;
+    return <TeacherHub />;
 }

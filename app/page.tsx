@@ -10,7 +10,23 @@ import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 
 export default function Home() {
-  const { currentSession, initialize, studentResponses, sidebarOpen, sidebarWidth, setSidebarWidth, activeQuestionId, advanceRequestId, advanceTargetIndex, summaryRequestId, summaryQuestionId, nudgeRequestId, nudgeMessage, setGoalProgress } = useAppStore();
+  const {
+    currentSession,
+    initialize,
+    studentResponses,
+    sidebarOpen,
+    sidebarWidth,
+    setSidebarWidth,
+    activeQuestionId,
+    advanceRequestId,
+    advanceTargetIndex,
+    summaryRequestId,
+    summaryQuestionId,
+    nudgeRequestId,
+    nudgeMessage,
+    setGoalProgress,
+    requestSummary,
+  } = useAppStore();
   const sessionRef = useRef(currentSession);
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcLarge, setCalcLarge] = useState(false);
@@ -51,6 +67,7 @@ export default function Home() {
   const runtimeRef = useRef<any>(null);
   const messageIndexRef = useRef(0);
   const questionStartIndexRef = useRef<Record<string, number>>({});
+  const lastQuestionIdRef = useRef<string | null>(null);
 
   // 1. Initial Load from localStorage (mock)
   const runtime = useLocalRuntime({
@@ -524,6 +541,15 @@ export default function Home() {
     });
     rt.thread.startRun(null);
   }, [nudgeRequestId, nudgeMessage]);
+
+  useEffect(() => {
+    if (!activeQuestionId) return;
+    const prev = lastQuestionIdRef.current;
+    if (prev && prev !== activeQuestionId) {
+      requestSummary(prev);
+    }
+    lastQuestionIdRef.current = activeQuestionId;
+  }, [activeQuestionId, requestSummary]);
 
   return (
     <div className="fixed inset-0 h-dvh w-full bg-white dark:bg-zinc-950 flex flex-col min-h-0">

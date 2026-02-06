@@ -9,6 +9,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { QuestionTrigger } from "@/components/QuestionTrigger";
+import { LessonDisplay } from "@/components/LessonDisplay";
 import { MarkDoneTrigger } from "@/components/MarkDoneTrigger";
 import { MarkGoalTrigger } from "@/components/MarkGoalTrigger";
 import { HintStack } from "@/components/HintStack";
@@ -217,6 +218,7 @@ const AssistantMessage: FC = () => {
               Fallback: ToolFallback,
               by_name: {
                 display_question: QuestionTrigger,
+                display_lesson: LessonDisplay,
                 unlock_mark_done: MarkDoneTrigger,
                 mark_goal_complete: MarkGoalTrigger,
                 display_hints: HintStack,
