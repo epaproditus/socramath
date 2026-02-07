@@ -151,26 +151,28 @@ export default function LessonSessionDashboard() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+    <div className="mx-auto w-full max-w-[1500px] p-6">
+      <div className="mb-5 rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+        <div className="flex items-center justify-between">
           <div className="text-sm text-zinc-500">Lesson Session</div>
-          <h1 className="text-2xl font-semibold">{data?.lesson.title || "Lesson"}</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/teacher"
-            className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
-          >
-            <ArrowLeft className="h-4 w-4" /> Hub
-          </Link>
-          <button
-            onClick={loadData}
-            className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
-            disabled={loading}
-          >
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
+          <div className="text-base font-semibold text-zinc-900">
+            {data?.lesson.title || "Session name"}
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/teacher"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
+            >
+              <ArrowLeft className="h-4 w-4" /> Hub
+            </Link>
+            <button
+              onClick={loadData}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
+              disabled={loading}
+            >
+              <RefreshCw className="h-4 w-4" /> Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -187,23 +189,41 @@ export default function LessonSessionDashboard() {
       )}
 
       {data && (
-        <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="mb-3 text-sm font-semibold text-zinc-700">Slides</div>
-            <div className="space-y-2">
-              {data.slides.map((slide) => (
-                <button
-                  key={slide.id}
-                  onClick={() => goToSlide(slide.index)}
-                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${
-                    slide.index === currentSlideIndex
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                      : "border-zinc-200 hover:bg-zinc-50"
-                  }`}
-                >
-                  Slide {slide.index}
-                </button>
-              ))}
+        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)_360px]">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+            <div className="mb-3 text-xs font-semibold uppercase text-zinc-500">Slides</div>
+            <div className="space-y-3 overflow-y-auto max-h-[78vh] pr-1">
+              {data.slides.map((slide) => {
+                const digits = String(slideCount).length;
+                const thumbFilename = `${String(slide.index).padStart(digits, "0")}.png`;
+                return (
+                  <button
+                    key={slide.id}
+                    onClick={() => goToSlide(slide.index)}
+                    className={`w-full rounded-xl border p-2 text-left ${
+                      slide.index === currentSlideIndex
+                        ? "border-indigo-500 bg-indigo-50"
+                        : "border-zinc-200 hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="text-[11px] text-zinc-500 mb-2">Slide {slide.index}</div>
+                    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
+                      <img
+                        src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}`}
+                        alt={`Slide ${slide.index}`}
+                        className="h-28 w-full object-contain bg-white"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          const fallback = `/uploads/lessons/${data.lesson.id}/slides/${slide.index}.png`;
+                          if (target.src.endsWith(thumbFilename)) {
+                            target.src = fallback;
+                          }
+                        }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -257,7 +277,7 @@ export default function LessonSessionDashboard() {
                 <img
                   src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
                   alt={`Slide ${currentSlideIndex}`}
-                  className="h-[520px] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
+                  className="h-[70vh] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
                   onError={(e) => {
                     const target = e.currentTarget;
                     const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
@@ -467,6 +487,20 @@ export default function LessonSessionDashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs font-semibold uppercase text-zinc-500">Sidepanel Preview</div>
+              <div className="text-[11px] text-zinc-400">Student view</div>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 overflow-hidden h-[78vh]">
+              <iframe
+                title="Student preview"
+                src="/"
+                className="h-full w-full"
+              />
             </div>
           </div>
         </div>
