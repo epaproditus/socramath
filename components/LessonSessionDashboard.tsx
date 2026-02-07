@@ -207,11 +207,11 @@ export default function LessonSessionDashboard() {
                     }`}
                   >
                     <div className="text-[11px] text-zinc-500 mb-2">Slide {slide.index}</div>
-                    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
+                    <div className="aspect-[3/4] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
                       <img
                         src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}`}
                         alt={`Slide ${slide.index}`}
-                        className="h-28 w-full object-contain bg-white"
+                        className="h-full w-full object-contain bg-white"
                         onError={(e) => {
                           const target = e.currentTarget;
                           const fallback = `/uploads/lessons/${data.lesson.id}/slides/${slide.index}.png`;
@@ -274,18 +274,20 @@ export default function LessonSessionDashboard() {
               </div>
 
               {data.lesson.id ? (
-                <img
-                  src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
-                  alt={`Slide ${currentSlideIndex}`}
-                  className="h-[70vh] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
-                    if (target.src.endsWith(slideFilename)) {
-                      target.src = fallback;
-                    }
-                  }}
-                />
+                <div className="h-[78vh] w-full rounded-lg border border-zinc-200 bg-zinc-50">
+                  <img
+                    src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
+                    alt={`Slide ${currentSlideIndex}`}
+                    className="h-full w-full object-contain bg-white"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
+                      if (target.src.endsWith(slideFilename)) {
+                        target.src = fallback;
+                      }
+                    }}
+                  />
+                </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-sm text-zinc-500">
                   No PDF uploaded for this lesson.
