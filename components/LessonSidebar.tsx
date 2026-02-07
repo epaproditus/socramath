@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import GeoGebraWidget from "@/components/GeoGebraWidget";
 
 type LessonInfo = {
@@ -25,7 +24,6 @@ type LessonSidebarProps = {
   responseText: string;
   onResponseTextChange: (next: string) => void;
   onAutoSaveResponse: (text: string) => void;
-  onChangeSlide: (nextIndex: number) => void;
   onSubmitResponse: (response: string) => Promise<void>;
   onSaveDrawing: () => Promise<void>;
 };
@@ -40,7 +38,6 @@ export default function LessonSidebar({
   responseText,
   onResponseTextChange,
   onAutoSaveResponse,
-  onChangeSlide,
   onSubmitResponse,
   onSaveDrawing,
 }: LessonSidebarProps) {
@@ -90,29 +87,11 @@ export default function LessonSidebar({
       <div className="text-sm font-semibold">{lesson.title}</div>
 
       <div className="rounded-lg border border-zinc-200 bg-white p-3">
-        <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
-          <span>
-            Slide {currentSlideIndex} of {slideCount}
-          </span>
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span>Lesson</span>
           <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-[10px] uppercase">
             {session.mode === "instructor" ? "Instructor-paced" : "Student-paced"}
           </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => onChangeSlide(currentSlideIndex - 1)}
-            disabled={session.mode !== "student"}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs disabled:opacity-40"
-          >
-            <ChevronLeft className="h-3 w-3" /> Prev
-          </button>
-          <button
-            onClick={() => onChangeSlide(currentSlideIndex + 1)}
-            disabled={session.mode !== "student"}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs disabled:opacity-40"
-          >
-            Next <ChevronRight className="h-3 w-3" />
-          </button>
         </div>
       </div>
 

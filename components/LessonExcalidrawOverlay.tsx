@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 type LessonExcalidrawOverlayProps = {
   imageUrl: string;
   onChange?: (dataUrl: string) => void;
+  onTextChange?: (text: string) => void;
 };
 
 const Excalidraw = dynamic(
@@ -14,9 +15,10 @@ const Excalidraw = dynamic(
   { ssr: false }
 );
 
-export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonExcalidrawOverlayProps) {
+export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChange }: LessonExcalidrawOverlayProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const textRef = useRef<string>("");
   const imageRef = useRef<HTMLImageElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(false);
@@ -101,6 +103,18 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
   };
 
   const handleChange = () => {
+    if (onTextChange && apiRef.current) {
+      const elements = apiRef.current.getSceneElements();
+      const text = elements
+        .filter((el: any) => el?.type === "text" && typeof el?.text === "string")
+        .map((el: any) => el.text.trim())
+        .filter(Boolean)
+        .join("\n");
+      if (text !== textRef.current) {
+        textRef.current = text;
+        onTextChange(text);
+      }
+    }
     if (!onChange) return;
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current);
@@ -140,7 +154,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
       />
       {imageLoaded && (
         <div
-          className="absolute left-0 top-0 excalidraw-transparent"
+          className="absolute left-0 top-0 excalidraw-transparent z-10"
           style={{ width: "100%", height: "100%", pointerEvents: "auto" }}
         >
           <Excalidraw
@@ -160,7 +174,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
               elements: [],
               files: {},
               appState: {
-                zenModeEnabled: true,
+                zenModeEnabled: false,
                 viewBackgroundColor: "transparent",
                 gridSize: null,
                 scrollX: 0,
