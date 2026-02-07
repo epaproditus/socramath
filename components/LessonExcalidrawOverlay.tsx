@@ -30,6 +30,10 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
   }, []);
 
   useEffect(() => {
+    setImageLoaded(false);
+  }, [imageUrl]);
+
+  useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const handler = (e: WheelEvent) => {
@@ -49,6 +53,10 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
     const scroller = wrapper?.closest("[data-lesson-scroll]") as HTMLElement | null;
     if (!scroller) return;
     const onScroll = () => {
+      if (apiRef.current) {
+        const appState = apiRef.current.getAppState();
+        apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0 } });
+      }
       apiRef.current?.refresh();
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
@@ -144,7 +152,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
               });
             }}
             onChange={handleChange}
-            detectScroll={true}
+            detectScroll={false}
             handleKeyboardGlobally={false}
             viewModeEnabled={false}
             theme="light"
@@ -152,6 +160,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange }: LessonEx
               elements: [],
               files: {},
               appState: {
+                zenModeEnabled: true,
                 viewBackgroundColor: "transparent",
                 gridSize: null,
                 scrollX: 0,

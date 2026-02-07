@@ -15,8 +15,7 @@
 }
 
 /* Strip extra Excalidraw chrome for lesson overlay (keep main toolbar) */
-.excalidraw-transparent .App-menu_right,
-.excalidraw-transparent .App-menu_bottom {
+.excalidraw-transparent .App-menu_right {
   display: none !important;
 }
 
@@ -24,22 +23,48 @@
 .excalidraw-transparent .App-toolbar__extra-tools-trigger,
 .excalidraw-transparent [data-testid="toolbar-lock"],
 .excalidraw-transparent .undo-redo-buttons,
-.excalidraw-transparent .zoom-actions {
+.excalidraw-transparent .zoom-actions,
+.excalidraw-transparent .main-menu-trigger,
+.excalidraw-transparent .library-button,
+.excalidraw-transparent .LibraryButton,
+.excalidraw-transparent .library-menu-trigger,
+.excalidraw-transparent [data-testid="library-button"],
+.excalidraw-transparent [data-testid*="library"],
+.excalidraw-transparent button[aria-label="Library"],
+.excalidraw-transparent [data-testid*="zen-mode"],
+.excalidraw-transparent button[aria-label*="Zen"],
+.excalidraw-transparent button[title*="Zen"] {
   display: none !important;
 }
 
-/* Keep Excalidraw toolbar visible while scrolling */
-.excalidraw-transparent .App-top-bar {
-  position: fixed !important;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+/* Keep Excalidraw toolbar visible while scrolling (stick to slide container) */
+.excalidraw-transparent .App-top-bar,
+.excalidraw-transparent .App-bottom-bar {
+  position: sticky !important;
+  left: 0;
+  right: 0;
   z-index: 1200;
-  pointer-events: auto;
+  pointer-events: none;
+}
+
+.excalidraw-transparent .App-top-bar {
+  top: 8px;
+}
+
+.excalidraw-transparent .App-bottom-bar {
+  bottom: 8px;
 }
 
 .excalidraw-transparent .App-menu_top {
   pointer-events: auto !important;
+}
+
+.excalidraw-transparent .App-bottom-bar > .Island,
+.excalidraw-transparent .App-top-bar > .Island {
+  margin: 0 auto;
+  width: fit-content !important;
+  max-width: calc(100% - 24px);
+  pointer-events: auto;
 }
 
 @custom-variant dark (&:is(.dark *));
