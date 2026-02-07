@@ -19,6 +19,7 @@ export default function LessonBuilder() {
   const [success, setSuccess] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [answerKeyFile, setAnswerKeyFile] = useState<File | null>(null);
 
   const canUpload = useMemo(() => !!file && !importing, [file, importing]);
 
@@ -50,6 +51,7 @@ export default function LessonBuilder() {
       const form = new FormData();
       form.append("file", file);
       if (title.trim()) form.append("title", title.trim());
+      if (answerKeyFile) form.append("answerKey", answerKeyFile);
 
       const res = await fetch("/api/lesson-import", {
         method: "POST",
@@ -64,6 +66,7 @@ export default function LessonBuilder() {
       setSuccess(`Lesson created: ${created.title}`);
       setTitle("");
       setFile(null);
+      setAnswerKeyFile(null);
       await loadLessons();
     } catch (err: any) {
       setError(err?.message || "Failed to import lesson");
@@ -146,6 +149,16 @@ export default function LessonBuilder() {
             />
             {file && (
               <div className="text-xs text-zinc-500">Selected: {file.name}</div>
+            )}
+            <label className="block text-sm font-medium">Answer Key PDF (optional)</label>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={(e) => setAnswerKeyFile(e.target.files?.[0] || null)}
+              className="w-full text-sm"
+            />
+            {answerKeyFile && (
+              <div className="text-xs text-zinc-500">Answer key: {answerKeyFile.name}</div>
             )}
           </div>
 

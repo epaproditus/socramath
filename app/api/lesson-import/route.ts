@@ -23,6 +23,7 @@ export async function POST(req: Request) {
 
   const form = await req.formData();
   const file = form.get("file");
+  const answerKey = form.get("answerKey");
 
   if (!file || !(file instanceof File)) {
     return new Response("Missing file", { status: 400 });
@@ -34,20 +35,25 @@ export async function POST(req: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const pageTexts: string[] = [];
-  const parsed = await pdfParse(buffer, {
-    pagerender: (pageData: any) =>
-      pageData.getTextContent().then((tc: any) => {
-        const text = tc.items
-          .map((item: any) => ("str" in item ? item.str : ""))
-          .join(" ");
-        const normalized = normalizeText(text);
-        pageTexts.push(normalized);
-        return text;
-      }),
-  });
-  const content = normalizeText(parsed.text || "");
-  const pageCount = parsed.numpages || parsed.numrender || pageTexts.length || 0;
+  const parsePdf = async (input: Buffer) => {
+    const pageTexts: string[] = [];
+    const parsed = await pdfParse(input, {
+      pagerender: (pageData: any) =>
+        pageData.getTextContent().then((tc: any) => {
+          const text = tc.items
+            .map((item: any) => ("str" in item ? item.str : ""))
+            .join(" ");
+          const normalized = normalizeText(text);
+          pageTexts.push(normalized);
+          return text;
+        }),
+    });
+    const content = normalizeText(parsed.text || "");
+    const pageCount = parsed.numpages || parsed.numrender || pageTexts.length || 0;
+    return { pageTexts, content, pageCount };
+  };
+
+  const { pageTexts, content, pageCount } = await parsePdf(buffer);
 
   if (!content) {
     return new Response("No text found in PDF", { status: 400 });
@@ -120,6 +126,25 @@ export async function POST(req: Request) {
         })
       )
     );
+  }
+
+  if (answerKey && answerKey instanceof File) {
+    const answerName = answerKey.name || "answer-key.pdf";
+    if (!answerName.toLowerCase().endsWith(".pdf")) {
+      return new Response("Answer key must be a PDF", { status: 400 });
+    }
+    const answerBuffer = Buffer.from(await answerKey.arrayBuffer());
+    const { pageTexts: answerTexts } = await parsePdf(answerBuffer);
+    if (answerTexts.length) {
+      await prisma.$transaction(
+        answerTexts.map((text, idx) =>
+          prisma.lessonSlide.updateMany({
+            where: { lessonId: lesson.id, index: idx + 1 },
+            data: { rubric: JSON.stringify([text]) },
+          })
+        )
+      );
+    }
   }
 
   // Render each page to a PNG for fast slide display (Pear Deck style)
