@@ -151,8 +151,8 @@ export default function LessonSessionDashboard() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] p-6">
-      <div className="mb-5 rounded-2xl border border-zinc-200 bg-white px-4 py-3">
+    <div className="mx-auto w-full max-w-[1500px] p-3">
+      <div className="mb-4 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="text-sm text-zinc-500">Lesson Session</div>
           <div className="text-base font-semibold text-zinc-900">
@@ -189,9 +189,9 @@ export default function LessonSessionDashboard() {
       )}
 
       {data && (
-        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="rounded-2xl border border-zinc-200 bg-white p-3">
-            <div className="space-y-3 overflow-y-auto max-h-[78vh] pr-1">
+        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="rounded-2xl border border-zinc-200 bg-white p-2">
+            <div className="space-y-2 overflow-y-auto max-h-[78vh] pr-1">
               {data.slides.map((slide) => {
                 const digits = String(slideCount).length;
                 const thumbFilename = `${String(slide.index).padStart(digits, "0")}.png`;
@@ -205,7 +205,7 @@ export default function LessonSessionDashboard() {
                         : "border-zinc-200 hover:bg-zinc-50"
                     }`}
                   >
-                    <span className="mb-2 block text-[11px] text-zinc-500">#{slide.index}</span>
+                    <span className="mb-1 block text-[11px] text-zinc-500">#{slide.index}</span>
                     <img
                       src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}`}
                       alt={`Slide ${slide.index}`}
@@ -225,7 +225,7 @@ export default function LessonSessionDashboard() {
           </aside>
 
           <div className="space-y-4">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-3">
               <div className="mb-3 flex items-center justify-between">
                 <div className="text-sm font-semibold text-zinc-700">
                   Slide {currentSlideIndex} of {slideCount}
@@ -271,11 +271,11 @@ export default function LessonSessionDashboard() {
               </div>
 
               {data.lesson.id ? (
-                <div className="h-[78vh] w-full rounded-lg border border-zinc-200 bg-zinc-50">
+                <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50">
                   <img
                     src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
                     alt={`Slide ${currentSlideIndex}`}
-                    className="h-full w-full object-contain bg-white"
+                    className="h-auto w-full object-contain bg-white"
                     onError={(e) => {
                       const target = e.currentTarget;
                       const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
