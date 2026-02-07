@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import RichTextEditor from "@/components/RichTextEditor";
+import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 
 type Slide = { id: string; index: number };
 type LessonSessionPayload = {
@@ -31,6 +32,8 @@ export default function LessonSessionDashboard() {
   const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
+  const scratchTextTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [creatingSlide, setCreatingSlide] = useState(false);
 
   const currentSlideIndex = data?.session.currentSlideIndex || 1;
   const slideCount = data?.lesson.pageCount || data?.slides.length || 1;
@@ -142,6 +145,46 @@ export default function LessonSessionDashboard() {
     }, 600);
   };
 
+  const createScratchSlide = async () => {
+    if (!data?.lesson.id) return;
+    setCreatingSlide(true);
+    try {
+      const res = await fetch("/api/lesson-slide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lessonId: data.lesson.id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const created = await res.json();
+      await updateSession({ currentSlideIndex: created.index });
+    } catch (err: any) {
+      setError(err?.message || "Failed to create slide");
+    } finally {
+      setCreatingSlide(false);
+    }
+  };
+
+  const handleScratchImageChange = async (dataUrl: string) => {
+    if (!slideDetail?.id) return;
+    await fetch("/api/lesson-slide", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slideId: slideDetail.id, imageDataUrl: dataUrl }),
+    });
+  };
+
+  const handleScratchTextChange = (text: string) => {
+    if (!slideDetail?.id) return;
+    if (scratchTextTimerRef.current) clearTimeout(scratchTextTimerRef.current);
+    scratchTextTimerRef.current = setTimeout(async () => {
+      await fetch("/api/lesson-slide", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slideId: slideDetail.id, text }),
+      });
+    }, 700);
+  };
+
   return (
     <div className="mx-auto w-full max-w-[1500px] p-3">
       <div className="mb-4 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
@@ -206,6 +249,13 @@ export default function LessonSessionDashboard() {
                   </button>
                 );
               })}
+              <button
+                onClick={createScratchSlide}
+                disabled={creatingSlide}
+                className="w-full rounded-xl border border-dashed border-zinc-200 px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {creatingSlide ? "Creating..." : "+ New slide"}
+              </button>
             </div>
           </aside>
 
@@ -233,18 +283,26 @@ export default function LessonSessionDashboard() {
 
               {data.lesson.id ? (
                 <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50">
-                  <img
-                    src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
-                    alt={`Slide ${currentSlideIndex}`}
-                    className="h-auto w-full object-contain bg-white"
-                    onError={(e) => {
-                      const target = e.currentTarget;
-                      const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
-                      if (target.src.endsWith(slideFilename)) {
-                        target.src = fallback;
-                      }
-                    }}
-                  />
+                  {slideDetail?.responseConfig?.scratch ? (
+                    <LessonExcalidrawOverlay
+                      imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
+                      onChange={handleScratchImageChange}
+                      onTextChange={handleScratchTextChange}
+                    />
+                  ) : (
+                    <img
+                      src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
+                      alt={`Slide ${currentSlideIndex}`}
+                      className="h-auto w-full object-contain bg-white"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
+                        if (target.src.endsWith(slideFilename)) {
+                          target.src = fallback;
+                        }
+                      }}
+                    />
+                  )}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-sm text-zinc-500">

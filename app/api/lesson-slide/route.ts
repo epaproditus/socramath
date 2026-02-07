@@ -1,5 +1,7 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
 
 export async function GET(req: Request) {
@@ -28,6 +30,56 @@ export async function GET(req: Request) {
   });
 }
 
+export async function POST(req: Request) {
+  const session = await auth();
+  const adminEmail = process.env.ADMIN_EMAIL;
+
+  if (!session?.user?.email || !adminEmail || session.user.email !== adminEmail) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const body = await req.json();
+  const lessonId = body?.lessonId as string | undefined;
+  if (!lessonId) return new Response("Missing lessonId", { status: 400 });
+
+  const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+  if (!lesson) return new Response("Lesson not found", { status: 404 });
+
+  const lastSlide = await prisma.lessonSlide.findFirst({
+    where: { lessonId },
+    orderBy: { index: "desc" },
+  });
+  const nextIndex = (lastSlide?.index || 0) + 1;
+
+  const slide = await prisma.lessonSlide.create({
+    data: {
+      lessonId,
+      index: nextIndex,
+      text: "",
+      responseConfig: JSON.stringify({ scratch: true }),
+    },
+  });
+
+  if (nextIndex > lesson.pageCount) {
+    await prisma.lesson.update({
+      where: { id: lessonId },
+      data: { pageCount: nextIndex },
+    });
+  }
+
+  const slidesDir = path.join(process.cwd(), "public", "uploads", "lessons", lessonId, "slides");
+  await mkdir(slidesDir, { recursive: true });
+  const { createCanvas } = await import("canvas");
+  const canvas = createCanvas(1280, 720);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const buffer = canvas.toBuffer("image/png");
+  await writeFile(path.join(slidesDir, `${nextIndex}.png`), buffer);
+
+  return Response.json({ id: slide.id, index: slide.index });
+}
+
 export async function PATCH(req: Request) {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -46,6 +98,22 @@ export async function PATCH(req: Request) {
   const responseConfig = body?.responseConfig && typeof body.responseConfig === "object"
     ? body.responseConfig
     : undefined;
+  const text = typeof body?.text === "string" ? body.text : undefined;
+  const imageDataUrl = typeof body?.imageDataUrl === "string" ? body.imageDataUrl : undefined;
+
+  if (imageDataUrl) {
+    const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
+    if (slide) {
+      const lesson = await prisma.lesson.findUnique({ where: { id: slide.lessonId } });
+      if (lesson) {
+        const slidesDir = path.join(process.cwd(), "public", "uploads", "lessons", lesson.id, "slides");
+        await mkdir(slidesDir, { recursive: true });
+        const base64 = imageDataUrl.split(",")[1] || "";
+        const buffer = Buffer.from(base64, "base64");
+        await writeFile(path.join(slidesDir, `${slide.index}.png`), buffer);
+      }
+    }
+  }
 
   await prisma.lessonSlide.update({
     where: { id: slideId },
@@ -54,6 +122,7 @@ export async function PATCH(req: Request) {
       rubric: rubric ? JSON.stringify(rubric) : undefined,
       responseType,
       responseConfig: responseConfig ? JSON.stringify(responseConfig) : undefined,
+      text,
     },
   });
 
