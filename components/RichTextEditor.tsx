@@ -21,6 +21,7 @@ export default function RichTextEditor({ value, placeholder, onChange }: RichTex
       }),
     ],
     content: value || "",
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class:
