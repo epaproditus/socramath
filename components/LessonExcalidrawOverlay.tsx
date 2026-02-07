@@ -33,6 +33,13 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
 
   useEffect(() => {
     setImageLoaded(false);
+    textRef.current = "";
+    if (onTextChange) onTextChange("");
+    if (apiRef.current) {
+      apiRef.current.updateScene({ elements: [] });
+      const appState = apiRef.current.getAppState();
+      apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0, zoom: { value: 1 } } });
+    }
   }, [imageUrl]);
 
   useEffect(() => {
@@ -158,7 +165,6 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
           style={{ width: "100%", height: "100%", pointerEvents: "auto" }}
         >
           <Excalidraw
-            key={imageUrl}
             excalidrawAPI={(api) => {
               apiRef.current = api;
               requestAnimationFrame(() => {

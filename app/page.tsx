@@ -53,8 +53,7 @@ export default function Home() {
   } = useAppStore();
   const sessionRef = useRef(currentSession);
   const [calcLarge, setCalcLarge] = useState(false);
-  const [lessonTab, setLessonTab] = useState<"responses" | "chat" | "calculator">("chat");
-  const [lessonResponseText, setLessonResponseText] = useState("");
+  const [lessonTab, setLessonTab] = useState<"chat" | "calculator">("chat");
   const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("lesson");
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
@@ -140,20 +139,6 @@ export default function Home() {
     await loadLessonState();
   };
 
-  const handleLessonResponse = async (text: string) => {
-    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
-    await fetch("/api/lesson-response", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: lessonState.session.id,
-        slideId: lessonState.currentSlideId,
-        response: text,
-        responseType: lessonState.slideResponseType || "text",
-      }),
-    });
-  };
-
   const handleLessonDrawing = async (dataUrl: string) => {
     if (!lessonState?.session.id || !lessonState.currentSlideId) return;
     await fetch("/api/lesson-drawing", {
@@ -174,15 +159,6 @@ export default function Home() {
     }, 700);
   };
 
-  const handleAutoSaveLessonResponse = async (text: string) => {
-    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
-    await handleLessonResponse(text);
-  };
-
-  const saveCurrentDrawing = async () => {
-    // Excalidraw autosaves on change; keep button as a no-op save.
-  };
-
   useEffect(() => {
     loadLessonState(true);
   }, []);
@@ -195,25 +171,6 @@ export default function Home() {
     }, 2000);
     return () => clearInterval(interval);
   }, [lessonState?.session.id, lessonState?.session.mode]);
-
-  useEffect(() => {
-    const loadMyResponse = async () => {
-      if (!lessonState?.currentSlideId || !lessonState?.session.id) {
-        setLessonResponseText("");
-        return;
-      }
-      const res = await fetch(
-        `/api/lesson-response?sessionId=${lessonState.session.id}&slideId=${lessonState.currentSlideId}&me=1`
-      );
-      if (!res.ok) {
-        setLessonResponseText("");
-        return;
-      }
-      const data = await res.json();
-      setLessonResponseText(typeof data?.response === "string" ? data.response : "");
-    };
-    loadMyResponse();
-  }, [lessonState?.currentSlideId, lessonState?.session.id]);
 
   // bottom-left / bottom-right toggle only
 
