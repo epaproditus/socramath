@@ -43,27 +43,35 @@ export async function POST(req: Request) {
 
   const publicPath = `/uploads/lessons/${slide.lessonId}/responses/${sessionId}/${slideId}/${session.user.id}.png`;
 
-  await prisma.lessonResponse.upsert({
-    where: {
-      sessionId_slideId_userId: {
+  try {
+    await prisma.lessonResponse.upsert({
+      where: {
+        sessionId_slideId_userId: {
+          sessionId,
+          slideId,
+          userId: session.user.id,
+        },
+      },
+      update: {
+        drawingPath: publicPath,
+        responseType: "drawing",
+      },
+      create: {
         sessionId,
         slideId,
         userId: session.user.id,
+        response: "",
+        drawingPath: publicPath,
+        responseType: "drawing",
       },
-    },
-    update: {
-      drawingPath: publicPath,
-      responseType: "drawing",
-    },
-    create: {
-      sessionId,
-      slideId,
-      userId: session.user.id,
-      response: "",
-      drawingPath: publicPath,
-      responseType: "drawing",
-    },
-  });
+    });
+  } catch (err: any) {
+    const message = typeof err?.message === "string" ? err.message : "";
+    if (!message.toLowerCase().includes("readonly")) {
+      throw err;
+    }
+    console.warn("lesson-drawing upsert skipped (readonly db)");
+  }
 
   return Response.json({ drawingPath: publicPath });
 }

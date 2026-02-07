@@ -113,22 +113,30 @@ export async function POST(req: Request) {
     return new Response("Session is instructor-paced", { status: 400 });
   }
 
-  await prisma.lessonSessionState.upsert({
-    where: {
-      sessionId_userId: {
+  try {
+    await prisma.lessonSessionState.upsert({
+      where: {
+        sessionId_userId: {
+          sessionId,
+          userId: session.user.id,
+        },
+      },
+      update: {
+        currentSlideIndex: Math.max(1, currentSlideIndex),
+      },
+      create: {
         sessionId,
         userId: session.user.id,
+        currentSlideIndex: Math.max(1, currentSlideIndex),
       },
-    },
-    update: {
-      currentSlideIndex: Math.max(1, currentSlideIndex),
-    },
-    create: {
-      sessionId,
-      userId: session.user.id,
-      currentSlideIndex: Math.max(1, currentSlideIndex),
-    },
-  });
+    });
+  } catch (err: any) {
+    const message = typeof err?.message === "string" ? err.message : "";
+    if (!message.toLowerCase().includes("readonly")) {
+      throw err;
+    }
+    console.warn("lesson-state upsert skipped (readonly db)");
+  }
 
   return new Response("OK");
 }
