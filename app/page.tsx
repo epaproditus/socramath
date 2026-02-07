@@ -56,9 +56,10 @@ export default function Home() {
   const [calcLarge, setCalcLarge] = useState(false);
   const [lessonTab, setLessonTab] = useState<"responses" | "chat" | "calculator">("responses");
   const [lessonResponseText, setLessonResponseText] = useState("");
-  const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("test");
+  const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("lesson");
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
+  const [lessonDrawingText, setLessonDrawingText] = useState("");
 
   useEffect(() => {
     initialize();
@@ -71,6 +72,10 @@ export default function Home() {
   useEffect(() => {
     lessonStateRef.current = lessonState;
   }, [lessonState]);
+  const lessonDrawingTextRef = useRef("");
+  useEffect(() => {
+    lessonDrawingTextRef.current = lessonDrawingText;
+  }, [lessonDrawingText]);
 
   useEffect(() => {
     activeExperienceRef.current = activeExperience;
@@ -125,7 +130,6 @@ export default function Home() {
 
   const handleLessonSlideChange = async (nextIndex: number) => {
     if (!lessonState) return;
-    if (lessonState.session.mode !== "student") return;
     const max = lessonState.lesson.pageCount || lessonState.slides.length || 1;
     const clamped = Math.max(1, Math.min(nextIndex, max));
     setLessonState({ ...lessonState, currentSlideIndex: clamped });
@@ -219,7 +223,7 @@ export default function Home() {
   const questionStartIndexRef = useRef<Record<string, number>>({});
   const lastQuestionIdRef = useRef<string | null>(null);
   const lessonStateRef = useRef<LessonState | null>(null);
-  const activeExperienceRef = useRef<"test" | "lesson">("test");
+  const activeExperienceRef = useRef<"test" | "lesson">("lesson");
   const drawingSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   // 1. Initial Load from localStorage (mock)
@@ -334,6 +338,9 @@ export default function Home() {
             ${lessonState?.slideResponseType || "text"}
 
             PACING MODE: ${lessonState?.session.mode || "instructor"}
+
+            STUDENT DRAWING TEXT (from annotations on the slide):
+            ${(lessonDrawingTextRef.current || "None").slice(0, 1200)}
 
             INSTRUCTIONS:
             - Ask 1 focused, open-ended question at a time.
@@ -761,32 +768,7 @@ export default function Home() {
       {/* Main Header */}
       <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 pointer-events-none">
         {/* Left: Brand or Empty */}
-        <div className="pointer-events-auto">
-          {lessonState && (
-            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-2 py-1 text-xs font-semibold text-zinc-600 shadow-sm">
-              <button
-                onClick={() => setActiveExperience("test")}
-                className={`rounded-full px-3 py-1 ${
-                  activeExperience === "test"
-                    ? "bg-indigo-100 text-indigo-700"
-                    : "text-zinc-600 hover:bg-zinc-100"
-                }`}
-              >
-                Test Review
-              </button>
-              <button
-                onClick={() => setActiveExperience("lesson")}
-                className={`rounded-full px-3 py-1 ${
-                  activeExperience === "lesson"
-                    ? "bg-amber-100 text-amber-700"
-                    : "text-zinc-600 hover:bg-zinc-100"
-                }`}
-              >
-                Lesson
-              </button>
-            </div>
-          )}
-        </div>
+        <div className="pointer-events-auto" />
 
         {/* Right: Auth */}
         <div className="pointer-events-auto bg-white/50 dark:bg-black/50 backdrop-blur-sm p-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -796,28 +778,38 @@ export default function Home() {
 
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row pt-12">
         <AssistantRuntimeProvider runtime={runtime}>
-          {activeExperience === "lesson" && lessonState ? (
+          {activeExperience === "lesson" ? (
             <>
               <div className="flex-1 min-w-0 min-h-0 bg-white">
-                {(() => {
-                  const widgets: string[] = lessonState.slideResponseConfig?.widgets || (
-                    lessonState.slideResponseType === "both"
-                      ? ["text", "drawing"]
-                      : [lessonState.slideResponseType || "text"]
-                  );
-                  const showDrawing = widgets.includes("drawing");
-                  const digits = String(lessonState.lesson.pageCount || 1).length;
-                  const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
-                  return (
-                    <LessonStage
-                      lessonId={lessonState.lesson.id}
-                      slideFilename={slideFilename}
-                      currentSlideIndex={lessonState.currentSlideIndex}
-                      showDrawing={showDrawing}
-                      onDrawingChange={showDrawing ? handleDrawingChange : undefined}
-                    />
-                  );
-                })()}
+                {lessonState ? (
+                  (() => {
+                    const widgets: string[] = lessonState.slideResponseConfig?.widgets || (
+                      lessonState.slideResponseType === "both"
+                        ? ["text", "drawing"]
+                        : [lessonState.slideResponseType || "text"]
+                    );
+                    const showDrawing = widgets.includes("drawing");
+                    const digits = String(lessonState.lesson.pageCount || 1).length;
+                    const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
+                      return (
+                        <LessonStage
+                          lessonId={lessonState.lesson.id}
+                          slideFilename={slideFilename}
+                          currentSlideIndex={lessonState.currentSlideIndex}
+                          slideCount={lessonState.lesson.pageCount || lessonState.slides.length || 1}
+                          sessionMode={lessonState.session.mode}
+                          onChangeSlide={handleLessonSlideChange}
+                          showDrawing={showDrawing}
+                          onDrawingChange={showDrawing ? handleDrawingChange : undefined}
+                          onDrawingTextChange={setLessonDrawingText}
+                        />
+                      );
+                  })()
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">
+                    Loading lesson session...
+                  </div>
+                )}
               </div>
               <aside
                 className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
@@ -826,7 +818,7 @@ export default function Home() {
                 {sidebarOpen && (
                   <div className="relative h-full">
                     <div
-                      className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
+                      className="absolute -left-1 top-0 h-full w-3 cursor-col-resize z-30"
                       onMouseDown={(e) => {
                         const startX = e.clientX;
                         const startWidth = sidebarWidth;
@@ -847,18 +839,8 @@ export default function Home() {
                       }}
                       title="Drag to resize"
                     />
-                    <div className="p-4 lg:p-6 space-y-4">
+                    <div className="flex h-full flex-col p-0">
                       <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-600">
-                        <button
-                          onClick={() => setLessonTab("responses")}
-                          className={`rounded-full px-3 py-1 ${
-                            lessonTab === "responses"
-                              ? "bg-indigo-100 text-indigo-700"
-                              : "text-zinc-600 hover:bg-zinc-100"
-                          }`}
-                        >
-                          Responses
-                        </button>
                         <button
                           onClick={() => setLessonTab("chat")}
                           className={`rounded-full px-3 py-1 ${
@@ -880,34 +862,17 @@ export default function Home() {
                           Calculator
                         </button>
                       </div>
-                      {lessonTab === "responses" ? (
-                        <LessonSidebar
-                          lesson={{
-                            id: lessonState.lesson.id,
-                            title: lessonState.lesson.title,
-                            pageCount: lessonState.lesson.pageCount,
-                          }}
-                          session={{
-                            id: lessonState.session.id,
-                            mode: lessonState.session.mode,
-                          }}
-                          currentSlideIndex={lessonState.currentSlideIndex}
-                          currentSlideId={lessonState.currentSlideId}
-                          responseType={lessonState.slideResponseType || "text"}
-                          responseConfig={lessonState.slideResponseConfig}
-                          responseText={lessonResponseText}
-                          onResponseTextChange={setLessonResponseText}
-                          onAutoSaveResponse={handleAutoSaveLessonResponse}
-                          onChangeSlide={handleLessonSlideChange}
-                          onSubmitResponse={handleLessonResponse}
-                          onSaveDrawing={saveCurrentDrawing}
-                        />
-                      ) : lessonTab === "chat" ? (
-                        <div className="h-[70vh] min-h-[520px]">
+                      <div className="mt-2 flex-1 min-h-0">
+                        <div className={lessonTab === "chat" ? "h-full" : "hidden"}>
                           <Thread />
                         </div>
-                      ) : (
-                        <div className="flex h-[70vh] min-h-[520px] flex-col rounded-xl border border-zinc-200 bg-white">
+                        <div
+                          className={
+                            lessonTab === "calculator"
+                              ? "flex h-full flex-col rounded-xl border border-zinc-200 bg-white"
+                              : "hidden"
+                          }
+                        >
                           <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200">
                             <span className="text-xs font-semibold uppercase text-zinc-500">Desmos Calculator</span>
                             <button
@@ -923,7 +888,7 @@ export default function Home() {
                             title="Desmos Calculator"
                           />
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 )}
