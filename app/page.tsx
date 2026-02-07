@@ -59,7 +59,7 @@ export default function Home() {
   const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("lesson");
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
-  const [lessonDrawingText, setLessonDrawingText] = useState("");
+  const [lessonDrawingTextBySlide, setLessonDrawingTextBySlide] = useState<Record<string, string>>({});
 
   useEffect(() => {
     initialize();
@@ -72,10 +72,10 @@ export default function Home() {
   useEffect(() => {
     lessonStateRef.current = lessonState;
   }, [lessonState]);
-  const lessonDrawingTextRef = useRef("");
+  const lessonDrawingTextRef = useRef<Record<string, string>>({});
   useEffect(() => {
-    lessonDrawingTextRef.current = lessonDrawingText;
-  }, [lessonDrawingText]);
+    lessonDrawingTextRef.current = lessonDrawingTextBySlide;
+  }, [lessonDrawingTextBySlide]);
 
   useEffect(() => {
     activeExperienceRef.current = activeExperience;
@@ -304,6 +304,21 @@ export default function Home() {
 
       const lessonState = lessonStateRef.current;
       const isLesson = activeExperienceRef.current === "lesson" && !!lessonState;
+      const drawingTextMap = lessonDrawingTextRef.current || {};
+      const drawingTextSummary = (() => {
+        if (!lessonState?.slides?.length) return "";
+        const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
+        const entries = Object.entries(drawingTextMap)
+          .filter(([, text]) => text && text.trim().length > 0)
+          .sort((a, b) => (byIndex.get(a[0]) || 0) - (byIndex.get(b[0]) || 0))
+          .slice(0, 12)
+          .map(([id, text]) => {
+            const idx = byIndex.get(id) || "?";
+            const cleaned = text.replace(/\s+/g, " ").trim();
+            return `Slide ${idx}: ${cleaned.slice(0, 200)}`;
+          });
+        return entries.length ? entries.join("\n") : "None.";
+      })();
       let globalPrompt = "";
       try {
         const res = await fetch("/api/app-config");
@@ -340,7 +355,12 @@ export default function Home() {
             PACING MODE: ${lessonState?.session.mode || "instructor"}
 
             STUDENT DRAWING TEXT (from annotations on the slide):
-            ${(lessonDrawingTextRef.current || "None").slice(0, 1200)}
+            ${lessonState?.currentSlideId && drawingTextMap[lessonState.currentSlideId]
+              ? drawingTextMap[lessonState.currentSlideId].slice(0, 800)
+              : "None."}
+
+            STUDENT DRAWING TEXT (other slides):
+            ${drawingTextSummary}
 
             INSTRUCTIONS:
             - Ask 1 focused, open-ended question at a time.
@@ -801,7 +821,11 @@ export default function Home() {
                           onChangeSlide={handleLessonSlideChange}
                           showDrawing={showDrawing}
                           onDrawingChange={showDrawing ? handleDrawingChange : undefined}
-                          onDrawingTextChange={setLessonDrawingText}
+                          onDrawingTextChange={(text) => {
+                            const slideId = lessonState.currentSlideId;
+                            if (!slideId) return;
+                            setLessonDrawingTextBySlide((prev) => ({ ...prev, [slideId]: text }));
+                          }}
                         />
                       );
                   })()
