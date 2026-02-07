@@ -189,9 +189,9 @@ export default function LessonSessionDashboard() {
       )}
 
       {data && (
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="rounded-2xl border border-zinc-200 bg-white p-2">
-            <div className="space-y-2 overflow-y-auto max-h-[78vh] pr-1">
+        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] min-h-[calc(100vh-140px)]">
+          <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full">
+            <div className="space-y-2 overflow-y-auto h-full pr-1">
               {data.slides.map((slide) => {
                 const digits = String(slideCount).length;
                 const thumbFilename = `${String(slide.index).padStart(digits, "0")}.png`;
