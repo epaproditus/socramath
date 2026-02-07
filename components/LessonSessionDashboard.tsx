@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import RichTextEditor from "@/components/RichTextEditor";
 
 type Slide = { id: string; index: number };
 type LessonSessionPayload = {
@@ -81,10 +82,11 @@ export default function LessonSessionDashboard() {
       setSlideDetail({
         ...json,
       });
+      const rubricHtml = Array.isArray(json.rubric) ? json.rubric.join("\n") : "";
       lastSavedRef.current = JSON.stringify({
         id: json.id,
         prompt: json.prompt || "",
-        rubric: Array.isArray(json.rubric) ? json.rubric : [],
+        rubric: rubricHtml,
       });
       hydratedRef.current = true;
     };
@@ -125,7 +127,7 @@ export default function LessonSessionDashboard() {
     lastSavedRef.current = JSON.stringify({
       id: slideDetail.id,
       prompt: slideDetail.prompt || "",
-      rubric: slideDetail.rubric || [],
+      rubric: Array.isArray(slideDetail.rubric) ? slideDetail.rubric.join("\n") : "",
     });
   };
 
@@ -139,7 +141,7 @@ export default function LessonSessionDashboard() {
       const snapshot = JSON.stringify({
         id: slideDetail.id,
         prompt: slideDetail.prompt || "",
-        rubric: slideDetail.rubric || [],
+        rubric: Array.isArray(slideDetail.rubric) ? slideDetail.rubric.join("\n") : "",
       });
       if (snapshot !== lastSavedRef.current) {
         saveSlideDetail();
@@ -270,32 +272,27 @@ export default function LessonSessionDashboard() {
                   <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
                     Prompt
                   </label>
-                  <textarea
-                    value={slideDetail.prompt}
-                    onChange={(e) => {
-                      setSlideDetail({ ...slideDetail, prompt: e.target.value });
+                  <RichTextEditor
+                    value={slideDetail.prompt || ""}
+                    placeholder="What should students think about on this slide?"
+                    onChange={(value) => {
+                      setSlideDetail({ ...slideDetail, prompt: value });
                       scheduleAutosave();
                     }}
-                    className="h-28 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                    placeholder="What should students think about on this slide?"
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
                     Rubric (one per line)
                   </label>
-                  <textarea
-                    value={slideDetail.rubric.join("\n")}
-                    onChange={(e) => {
-                      const rubric = e.target.value
-                        .split("\n")
-                        .map((r) => r.trim())
-                        .filter(Boolean);
+                  <RichTextEditor
+                    value={(slideDetail.rubric || []).join("\n") || ""}
+                    placeholder="e.g. Uses a^2 + b^2 = c^2"
+                    onChange={(value) => {
+                      const rubric = value.trim() ? [value] : [];
                       setSlideDetail({ ...slideDetail, rubric });
                       scheduleAutosave();
                     }}
-                    className="h-36 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                    placeholder="e.g. Uses a^2 + b^2 = c^2"
                   />
                 </div>
                 <div className="text-xs text-zinc-500">
