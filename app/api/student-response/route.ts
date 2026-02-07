@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { auth } from "@/auth";
 
-const prisma = new PrismaClient();
 
 type ResponsePayload = {
   sessionId: string;

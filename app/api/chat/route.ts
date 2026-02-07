@@ -3,7 +3,7 @@ import { streamText, tool } from "ai";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 
 // Create a custom OpenAI provider instance pointing to DeepSeek
 const deepseekProvider = createOpenAI({
@@ -11,7 +11,6 @@ const deepseekProvider = createOpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
 });
 
-const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
   const session = await auth();

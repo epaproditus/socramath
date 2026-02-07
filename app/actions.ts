@@ -1,10 +1,9 @@
 "use server";
 
 import { auth } from "@/auth";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { MATH_TEST_SESSION } from "@/lib/lessons";
 
-const prisma = new PrismaClient();
 
 export async function fetchUserSession() {
     const session = await auth();

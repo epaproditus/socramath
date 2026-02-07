@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import pdfParse from "pdf-parse";
 import { mkdir, writeFile, rm, readdir, rename } from "fs/promises";
 import path from "path";
@@ -7,7 +7,6 @@ import { spawn } from "child_process";
 
 export const runtime = "nodejs";
 
-const prisma = new PrismaClient();
 
 function normalizeText(input: string) {
   return input.replace(/\s+/g, " ").trim();

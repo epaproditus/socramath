@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import Papa from "papaparse";
 
-const prisma = new PrismaClient();
 
 type NormalizedRow = {
   text: string;
