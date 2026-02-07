@@ -191,7 +191,6 @@ export default function LessonSessionDashboard() {
       {data && (
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <aside className="rounded-2xl border border-zinc-200 bg-white p-3">
-            <h2 className="mb-3 text-xs font-semibold uppercase text-zinc-500">Slides</h2>
             <div className="space-y-3 overflow-y-auto max-h-[78vh] pr-1">
               {data.slides.map((slide) => {
                 const digits = String(slideCount).length;
@@ -206,7 +205,7 @@ export default function LessonSessionDashboard() {
                         : "border-zinc-200 hover:bg-zinc-50"
                     }`}
                   >
-                    <span className="mb-2 block text-[11px] text-zinc-500">Slide {slide.index}</span>
+                    <span className="mb-2 block text-[11px] text-zinc-500">#{slide.index}</span>
                     <img
                       src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}`}
                       alt={`Slide ${slide.index}`}
