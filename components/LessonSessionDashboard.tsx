@@ -190,8 +190,8 @@ export default function LessonSessionDashboard() {
 
       {data && (
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-3">
-            <div className="mb-3 text-xs font-semibold uppercase text-zinc-500">Slides</div>
+          <aside className="rounded-2xl border border-zinc-200 bg-white p-3">
+            <h2 className="mb-3 text-xs font-semibold uppercase text-zinc-500">Slides</h2>
             <div className="space-y-3 overflow-y-auto max-h-[78vh] pr-1">
               {data.slides.map((slide) => {
                 const digits = String(slideCount).length;
@@ -206,26 +206,24 @@ export default function LessonSessionDashboard() {
                         : "border-zinc-200 hover:bg-zinc-50"
                     }`}
                   >
-                    <div className="text-[11px] text-zinc-500 mb-2">Slide {slide.index}</div>
-                    <div className="aspect-[3/4] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
-                      <img
-                        src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}`}
-                        alt={`Slide ${slide.index}`}
-                        className="h-full w-full object-contain bg-white"
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          const fallback = `/uploads/lessons/${data.lesson.id}/slides/${slide.index}.png`;
-                          if (target.src.endsWith(thumbFilename)) {
-                            target.src = fallback;
-                          }
-                        }}
-                      />
-                    </div>
+                    <span className="mb-2 block text-[11px] text-zinc-500">Slide {slide.index}</span>
+                    <img
+                      src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}`}
+                      alt={`Slide ${slide.index}`}
+                      className="aspect-[3/4] w-full rounded-lg border border-zinc-200 object-contain bg-white"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        const fallback = `/uploads/lessons/${data.lesson.id}/slides/${slide.index}.png`;
+                        if (target.src.endsWith(thumbFilename)) {
+                          target.src = fallback;
+                        }
+                      }}
+                    />
                   </button>
                 );
               })}
             </div>
-          </div>
+          </aside>
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-zinc-200 bg-white p-4">
