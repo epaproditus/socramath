@@ -219,7 +219,14 @@ export default function LessonSessionDashboard() {
       {data && (
         <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px] min-h-[calc(100vh-140px)]">
           <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full">
-            <div className="space-y-2 overflow-y-auto h-full pr-1">
+            <button
+              onClick={createScratchSlide}
+              disabled={creatingSlide}
+              className="mb-2 w-full rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {creatingSlide ? "Creating..." : "+ New slide"}
+            </button>
+            <div className="space-y-2 overflow-y-auto h-[calc(100%-42px)] pr-1">
               {data.slides.map((slide) => {
                 const digits = String(slideCount).length;
                 const thumbFilename = `${String(slide.index).padStart(digits, "0")}.png`;
