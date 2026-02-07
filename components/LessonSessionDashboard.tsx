@@ -11,6 +11,16 @@ type LessonSessionPayload = {
   slides: Slide[];
 };
 
+type SlideDetail = {
+  id: string;
+  index: number;
+  text: string;
+  prompt: string;
+  rubric: string[];
+  responseType: string;
+  responseConfig: Record<string, any>;
+};
+
 type ResponseRow = {
   id: string;
   response: string;
@@ -24,6 +34,9 @@ export default function LessonSessionDashboard() {
   const [responses, setResponses] = useState<ResponseRow[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [slideDetail, setSlideDetail] = useState<SlideDetail | null>(null);
+  const [slideSaving, setSlideSaving] = useState(false);
+  const [slideMessage, setSlideMessage] = useState<string | null>(null);
 
   const currentSlideIndex = data?.session.currentSlideIndex || 1;
   const slideCount = data?.lesson.pageCount || data?.slides.length || 1;
@@ -32,6 +45,11 @@ export default function LessonSessionDashboard() {
     const slide = data?.slides.find((s) => s.index === currentSlideIndex);
     return slide?.id || null;
   }, [data?.slides, currentSlideIndex]);
+
+  const slideFilename = useMemo(() => {
+    const digits = String(slideCount).length;
+    return `${String(currentSlideIndex).padStart(digits, "0")}.png`;
+  }, [currentSlideIndex, slideCount]);
 
   const loadData = async () => {
     setLoading(true);
@@ -68,10 +86,34 @@ export default function LessonSessionDashboard() {
   }, []);
 
   useEffect(() => {
-    if (currentSlideId && data?.session.id) {
+    if (!currentSlideId || !data?.session.id) return;
+    loadResponses(currentSlideId, data.session.id);
+    const interval = setInterval(() => {
       loadResponses(currentSlideId, data.session.id);
-    }
+    }, 2000);
+    return () => clearInterval(interval);
   }, [currentSlideId, data?.session.id]);
+
+  useEffect(() => {
+    const loadSlide = async () => {
+      if (!currentSlideId) return;
+      const res = await fetch(`/api/lesson-slide?slideId=${currentSlideId}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const widgets = Array.isArray(json.responseConfig?.widgets)
+        ? json.responseConfig.widgets
+        : json.responseType === "both"
+          ? ["text", "drawing"]
+          : json.responseType
+            ? [json.responseType]
+            : ["text"];
+      setSlideDetail({
+        ...json,
+        responseConfig: { ...json.responseConfig, widgets },
+      });
+    };
+    loadSlide();
+  }, [currentSlideId]);
 
   const updateSession = async (updates: Partial<LessonSessionPayload["session"]>) => {
     if (!data?.session.id) return;
@@ -86,6 +128,26 @@ export default function LessonSessionDashboard() {
   const goToSlide = async (index: number) => {
     const clamped = Math.max(1, Math.min(index, slideCount));
     await updateSession({ currentSlideIndex: clamped });
+  };
+
+  const saveSlideDetail = async () => {
+    if (!slideDetail) return;
+    setSlideSaving(true);
+    setSlideMessage(null);
+    await fetch("/api/lesson-slide", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slideId: slideDetail.id,
+        prompt: slideDetail.prompt,
+        rubric: slideDetail.rubric,
+        responseType: slideDetail.responseType,
+        responseConfig: slideDetail.responseConfig,
+      }),
+    });
+    setSlideSaving(false);
+    setSlideMessage("Saved.");
+    setTimeout(() => setSlideMessage(null), 1500);
   };
 
   return (
@@ -191,10 +253,18 @@ export default function LessonSessionDashboard() {
                 </button>
               </div>
 
-              {data.lesson.pdfPath ? (
-                <iframe
-                  src={`${data.lesson.pdfPath}#page=${currentSlideIndex}&view=FitH`}
-                  className="h-[520px] w-full rounded-lg border border-zinc-200"
+              {data.lesson.id ? (
+                <img
+                  src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}`}
+                  alt={`Slide ${currentSlideIndex}`}
+                  className="h-[520px] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const fallback = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png`;
+                    if (target.src.endsWith(slideFilename)) {
+                      target.src = fallback;
+                    }
+                  }}
                 />
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-sm text-zinc-500">
@@ -213,17 +283,190 @@ export default function LessonSessionDashboard() {
               {!responsesLoading && responses.length === 0 && (
                 <div className="text-sm text-zinc-500">No responses yet.</div>
               )}
-              <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {responses.map((r) => (
-                  <div key={r.id} className="rounded-lg border border-zinc-200 p-3">
-                    <div className="text-xs text-zinc-500">
-                      {r.user.name || r.user.email || "Student"}{" "}
-                      {r.user.classPeriod ? `• Period ${r.user.classPeriod}` : ""}
+                  <div key={r.id} className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+                    <div className="text-xs font-semibold text-zinc-700">
+                      {r.user.name || r.user.email || "Student"}
                     </div>
-                    <div className="mt-1 text-sm">{r.response}</div>
+                    {r.user.classPeriod && (
+                      <div className="text-[11px] text-zinc-500">Period {r.user.classPeriod}</div>
+                    )}
+                    <div className="mt-2 h-32 rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden flex items-center justify-center">
+                      {r.drawingPath ? (
+                        <img
+                          src={`${r.drawingPath}?t=${new Date(r.updatedAt).getTime()}`}
+                          alt="Student drawing"
+                          className="h-full w-full object-contain bg-white"
+                        />
+                      ) : (
+                        <div className="text-[11px] text-zinc-400">No drawing</div>
+                      )}
+                    </div>
+                    {r.response && (
+                      <div className="mt-2 text-xs text-zinc-700 line-clamp-4">{r.response}</div>
+                    )}
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+              <div className="mb-3 text-sm font-semibold text-zinc-700">
+                Slide Prompt & Rubric
+              </div>
+              {!slideDetail && (
+                <div className="text-sm text-zinc-500">Select a slide to edit.</div>
+              )}
+              {slideDetail && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                      Response Widgets
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {["text", "drawing", "geogebra"].map((widget) => {
+                        const widgets: string[] = slideDetail.responseConfig?.widgets || [];
+                        const enabled = widgets.includes(widget);
+                        return (
+                          <button
+                            key={widget}
+                            onClick={() => {
+                              const next = enabled
+                                ? widgets.filter((w) => w !== widget)
+                                : [...widgets, widget];
+                              const responseType = next.length === 2 ? "both" : next[0] || "text";
+                              setSlideDetail({
+                                ...slideDetail,
+                                responseType,
+                                responseConfig: { ...slideDetail.responseConfig, widgets: next },
+                              });
+                            }}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              enabled
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "border border-zinc-200 text-zinc-600"
+                            }`}
+                          >
+                            {widget === "text" ? "Text" : widget === "drawing" ? "Drawing" : "GeoGebra"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-[11px] text-zinc-500">
+                      Choose which response widgets appear for students on this slide.
+                    </div>
+                  </div>
+                  {slideDetail.responseConfig?.widgets?.includes("geogebra") && (
+                    <div className="rounded-lg border border-zinc-200 p-3">
+                      <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+                        GeoGebra Settings
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs text-zinc-500">Material ID</label>
+                        <input
+                          className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm"
+                          placeholder="e.g. mJQ8h7uF"
+                          value={slideDetail.responseConfig?.geogebra?.materialId || ""}
+                          onChange={(e) =>
+                            setSlideDetail({
+                              ...slideDetail,
+                              responseConfig: {
+                                ...slideDetail.responseConfig,
+                                geogebra: {
+                                  ...slideDetail.responseConfig?.geogebra,
+                                  materialId: e.target.value,
+                                },
+                              },
+                            })
+                          }
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-zinc-500">Width</label>
+                            <input
+                              type="number"
+                              className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm"
+                              value={slideDetail.responseConfig?.geogebra?.width || 640}
+                              onChange={(e) =>
+                                setSlideDetail({
+                                  ...slideDetail,
+                                  responseConfig: {
+                                    ...slideDetail.responseConfig,
+                                    geogebra: {
+                                      ...slideDetail.responseConfig?.geogebra,
+                                      width: Number(e.target.value),
+                                    },
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-zinc-500">Height</label>
+                            <input
+                              type="number"
+                              className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm"
+                              value={slideDetail.responseConfig?.geogebra?.height || 360}
+                              onChange={(e) =>
+                                setSlideDetail({
+                                  ...slideDetail,
+                                  responseConfig: {
+                                    ...slideDetail.responseConfig,
+                                    geogebra: {
+                                      ...slideDetail.responseConfig?.geogebra,
+                                      height: Number(e.target.value),
+                                    },
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                      Prompt
+                    </label>
+                    <textarea
+                      value={slideDetail.prompt}
+                      onChange={(e) =>
+                        setSlideDetail({ ...slideDetail, prompt: e.target.value })
+                      }
+                      className="h-24 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      placeholder="What should students think about on this slide?"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                      Rubric (one per line)
+                    </label>
+                    <textarea
+                      value={slideDetail.rubric.join("\n")}
+                      onChange={(e) =>
+                        setSlideDetail({
+                          ...slideDetail,
+                          rubric: e.target.value.split("\n").map((r) => r.trim()).filter(Boolean),
+                        })
+                      }
+                      className="h-24 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      placeholder="e.g. Uses a^2 + b^2 = c^2"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={saveSlideDetail}
+                      disabled={slideSaving}
+                      className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                    >
+                      {slideSaving ? "Saving..." : "Save Prompt"}
+                    </button>
+                    {slideMessage && <div className="text-xs text-emerald-600">{slideMessage}</div>}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

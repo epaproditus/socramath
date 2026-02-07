@@ -70,3 +70,31 @@ export async function PATCH(req: Request) {
 
   return new Response("OK");
 }
+
+export async function DELETE(req: Request) {
+  const session = await auth();
+  const adminEmail = process.env.ADMIN_EMAIL;
+
+  if (!session?.user?.email || !adminEmail || session.user.email !== adminEmail) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const body = await req.json();
+  const lessonId = body?.id;
+  if (!lessonId || typeof lessonId !== "string") {
+    return new Response("Missing lesson id", { status: 400 });
+  }
+
+  await prisma.lesson.delete({ where: { id: lessonId } });
+
+  try {
+    const { rm } = await import("fs/promises");
+    const { join } = await import("path");
+    const dir = join(process.cwd(), "public", "uploads", "lessons", lessonId);
+    await rm(dir, { recursive: true, force: true });
+  } catch {
+    // ignore filesystem cleanup errors
+  }
+
+  return new Response("OK");
+}

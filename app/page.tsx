@@ -3,11 +3,35 @@
 import { useLocalRuntime, AssistantRuntimeProvider, ComposerPrimitive, ThreadPrimitive, MessagePrimitive } from "@assistant-ui/react";
 import { Thread } from "@/components/assistant-ui/thread";
 import { useAppStore } from "@/lib/store";
-import { Link2, Calculator, X } from "lucide-react";
+import { Link2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useEffect, useState } from "react";
 import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
+import LessonSidebar from "@/components/LessonSidebar";
+import LessonStage from "@/components/LessonStage";
+
+type LessonState = {
+  lesson: {
+    id: string;
+    title: string;
+    pageCount: number;
+    content?: string;
+  };
+  session: {
+    id: string;
+    mode: "instructor" | "student";
+    currentSlideIndex: number;
+  };
+  currentSlideIndex: number;
+  currentSlideId: string | null;
+  slideText?: string;
+  slidePrompt?: string;
+  slideRubric?: string[];
+  slideResponseType?: string;
+  slideResponseConfig?: Record<string, any>;
+  slides: { id: string; index: number }[];
+};
 
 export default function Home() {
   const {
@@ -16,6 +40,7 @@ export default function Home() {
     studentResponses,
     sidebarOpen,
     sidebarWidth,
+    setSidebarOpen,
     setSidebarWidth,
     activeQuestionId,
     advanceRequestId,
@@ -28,9 +53,12 @@ export default function Home() {
     requestSummary,
   } = useAppStore();
   const sessionRef = useRef(currentSession);
-  const [calcOpen, setCalcOpen] = useState(false);
   const [calcLarge, setCalcLarge] = useState(false);
-  const [calcSide, setCalcSide] = useState<"left" | "right">("right");
+  const [lessonTab, setLessonTab] = useState<"responses" | "chat" | "calculator">("responses");
+  const [lessonResponseText, setLessonResponseText] = useState("");
+  const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("test");
+  const [lessonState, setLessonState] = useState<LessonState | null>(null);
+  const [lessonLoading, setLessonLoading] = useState(false);
 
   useEffect(() => {
     initialize();
@@ -41,13 +69,19 @@ export default function Home() {
   }, [currentSession]);
 
   useEffect(() => {
+    lessonStateRef.current = lessonState;
+  }, [lessonState]);
+
+  useEffect(() => {
+    activeExperienceRef.current = activeExperience;
+  }, [activeExperience]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("calc-state");
+    const stored = window.localStorage.getItem("calc-size");
     if (!stored) return;
     try {
       const parsed = JSON.parse(stored);
-      if (typeof parsed.open === "boolean") setCalcOpen(parsed.open);
-      if (parsed.side === "left" || parsed.side === "right") setCalcSide(parsed.side);
       if (typeof parsed.large === "boolean") setCalcLarge(parsed.large);
     } catch {
       // ignore
@@ -57,10 +91,126 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
-      "calc-state",
-      JSON.stringify({ open: calcOpen, side: calcSide, large: calcLarge })
+      "calc-size",
+      JSON.stringify({ large: calcLarge })
     );
-  }, [calcOpen, calcSide, calcLarge]);
+  }, [calcLarge]);
+
+  useEffect(() => {
+    if (activeExperience === "lesson") {
+      setSidebarOpen(true);
+    }
+  }, [activeExperience, setSidebarOpen]);
+
+  const loadLessonState = async (preferLesson = false) => {
+    setLessonLoading(true);
+    try {
+      const res = await fetch("/api/lesson-state");
+      if (!res.ok) {
+        setLessonState(null);
+        if (preferLesson) setActiveExperience("test");
+        return;
+      }
+      const json = await res.json();
+      setLessonState(json);
+      if (preferLesson || activeExperienceRef.current === "test") {
+        setActiveExperience("lesson");
+      }
+    } catch {
+      setLessonState(null);
+    } finally {
+      setLessonLoading(false);
+    }
+  };
+
+  const handleLessonSlideChange = async (nextIndex: number) => {
+    if (!lessonState) return;
+    if (lessonState.session.mode !== "student") return;
+    const max = lessonState.lesson.pageCount || lessonState.slides.length || 1;
+    const clamped = Math.max(1, Math.min(nextIndex, max));
+    setLessonState({ ...lessonState, currentSlideIndex: clamped });
+    await fetch("/api/lesson-state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: lessonState.session.id, currentSlideIndex: clamped }),
+    });
+    await loadLessonState();
+  };
+
+  const handleLessonResponse = async (text: string) => {
+    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
+    await fetch("/api/lesson-response", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: lessonState.session.id,
+        slideId: lessonState.currentSlideId,
+        response: text,
+        responseType: lessonState.slideResponseType || "text",
+      }),
+    });
+  };
+
+  const handleLessonDrawing = async (dataUrl: string) => {
+    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
+    await fetch("/api/lesson-drawing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: lessonState.session.id,
+        slideId: lessonState.currentSlideId,
+        dataUrl,
+      }),
+    });
+  };
+
+  const handleDrawingChange = (dataUrl: string) => {
+    if (drawingSaveTimer.current) clearTimeout(drawingSaveTimer.current);
+    drawingSaveTimer.current = setTimeout(() => {
+      handleLessonDrawing(dataUrl);
+    }, 700);
+  };
+
+  const handleAutoSaveLessonResponse = async (text: string) => {
+    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
+    await handleLessonResponse(text);
+  };
+
+  const saveCurrentDrawing = async () => {
+    // Excalidraw autosaves on change; keep button as a no-op save.
+  };
+
+  useEffect(() => {
+    loadLessonState(true);
+  }, []);
+
+  useEffect(() => {
+    if (!lessonState || activeExperienceRef.current !== "lesson") return;
+    if (lessonState.session.mode !== "instructor") return;
+    const interval = setInterval(() => {
+      loadLessonState();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [lessonState?.session.id, lessonState?.session.mode]);
+
+  useEffect(() => {
+    const loadMyResponse = async () => {
+      if (!lessonState?.currentSlideId || !lessonState?.session.id) {
+        setLessonResponseText("");
+        return;
+      }
+      const res = await fetch(
+        `/api/lesson-response?sessionId=${lessonState.session.id}&slideId=${lessonState.currentSlideId}&me=1`
+      );
+      if (!res.ok) {
+        setLessonResponseText("");
+        return;
+      }
+      const data = await res.json();
+      setLessonResponseText(typeof data?.response === "string" ? data.response : "");
+    };
+    loadMyResponse();
+  }, [lessonState?.currentSlideId, lessonState?.session.id]);
 
   // bottom-left / bottom-right toggle only
 
@@ -68,6 +218,9 @@ export default function Home() {
   const messageIndexRef = useRef(0);
   const questionStartIndexRef = useRef<Record<string, number>>({});
   const lastQuestionIdRef = useRef<string | null>(null);
+  const lessonStateRef = useRef<LessonState | null>(null);
+  const activeExperienceRef = useRef<"test" | "lesson">("test");
+  const drawingSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   // 1. Initial Load from localStorage (mock)
   const runtime = useLocalRuntime({
@@ -145,10 +298,56 @@ export default function Home() {
         activeResponse?.confidence
       );
 
-      // System Prompt - NOW DYNAMIC FROM STORE
-      const systemMessage = {
-        role: "system",
-        content: `You are a Socratic Test Review Coach.
+      const lessonState = lessonStateRef.current;
+      const isLesson = activeExperienceRef.current === "lesson" && !!lessonState;
+      let globalPrompt = "";
+      try {
+        const res = await fetch("/api/app-config");
+        if (res.ok) {
+          const cfg = await res.json();
+          globalPrompt = cfg?.systemPrompt || "";
+        }
+      } catch {
+        // ignore
+      }
+
+      // System Prompt - dynamic by experience
+      const systemMessage = isLesson
+        ? {
+            role: "system",
+            content: `You are a Socratic lesson tutor. Your goal is to help the student think deeply about the current slide and lesson, not to give answers.
+
+            LESSON TITLE: ${lessonState?.lesson.title || "Lesson"}
+            LESSON CONTEXT:
+            ${lessonState?.lesson.content || "No lesson context available."}
+
+            CURRENT SLIDE: ${lessonState?.currentSlideIndex || 1}
+            SLIDE CONTEXT:
+            ${lessonState?.slideText || "No slide text extracted."}
+            SLIDE PROMPT:
+            ${lessonState?.slidePrompt || "No prompt provided."}
+
+            SLIDE RUBRIC:
+            ${lessonState?.slideRubric?.length ? lessonState.slideRubric.join(" | ") : "No rubric provided."}
+
+            SLIDE RESPONSE TYPE:
+            ${lessonState?.slideResponseType || "text"}
+
+            PACING MODE: ${lessonState?.session.mode || "instructor"}
+
+            INSTRUCTIONS:
+            - Ask 1 focused, open-ended question at a time.
+            - Push for reasoning and evidence.
+            - If the student asks for answers, guide them with hints and questions instead.
+            - If the student asks to move slides and pacing is instructor, tell them the teacher controls it.
+            - If the student asks what slide they are on, answer exactly: "You're on slide ${lessonState?.currentSlideIndex || 1}."
+
+            GLOBAL TEACHER PROMPT:
+            ${globalPrompt || "None."}`,
+          }
+        : {
+            role: "system",
+            content: `You are a Socratic Test Review Coach.
 
         CONTEXT:
         - The student already completed a structured review card for each question (difficulty, initial reasoning, confidence).
@@ -188,13 +387,14 @@ export default function Home() {
 
         All Student Review Responses (keyed by question id):
         ${JSON.stringify(responseMap)}
+
+        GLOBAL TEACHER PROMPT:
+        ${globalPrompt || "None."}
         `
-      };
-      const payload = {
-        model: "",
-        messages: [systemMessage, ...apiMessages],
-        stream: true,
-        tools: [
+          };
+      const tools = isLesson
+        ? []
+        : [
           {
             type: "function",
             function: {
@@ -242,7 +442,12 @@ export default function Home() {
               }
             }
           }
-        ]
+        ];
+      const payload = {
+        model: "",
+        messages: [systemMessage, ...apiMessages],
+        stream: true,
+        tools,
       };
 
       // 2. Fetch
@@ -556,7 +761,32 @@ export default function Home() {
       {/* Main Header */}
       <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 pointer-events-none">
         {/* Left: Brand or Empty */}
-        <div></div>
+        <div className="pointer-events-auto">
+          {lessonState && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-2 py-1 text-xs font-semibold text-zinc-600 shadow-sm">
+              <button
+                onClick={() => setActiveExperience("test")}
+                className={`rounded-full px-3 py-1 ${
+                  activeExperience === "test"
+                    ? "bg-indigo-100 text-indigo-700"
+                    : "text-zinc-600 hover:bg-zinc-100"
+                }`}
+              >
+                Test Review
+              </button>
+              <button
+                onClick={() => setActiveExperience("lesson")}
+                className={`rounded-full px-3 py-1 ${
+                  activeExperience === "lesson"
+                    ? "bg-amber-100 text-amber-700"
+                    : "text-zinc-600 hover:bg-zinc-100"
+                }`}
+              >
+                Lesson
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Right: Auth */}
         <div className="pointer-events-auto bg-white/50 dark:bg-black/50 backdrop-blur-sm p-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -565,45 +795,182 @@ export default function Home() {
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row pt-12">
-        <div className="flex-1 min-w-0 min-h-0">
-          <AssistantRuntimeProvider runtime={runtime}>
-            <Thread />
-          </AssistantRuntimeProvider>
-        </div>
-        <aside
-          className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
-          style={sidebarOpen ? { width: sidebarWidth } : undefined}
-        >
-          {sidebarOpen && (
-            <div className="relative h-full">
-              <div
-                className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
-                onMouseDown={(e) => {
-                  const startX = e.clientX;
-                  const startWidth = sidebarWidth;
-
-                  const onMove = (ev: MouseEvent) => {
-                    const delta = startX - ev.clientX;
-                    const next = Math.min(720, Math.max(360, startWidth + delta));
-                    setSidebarWidth(next);
-                  };
-
-                  const onUp = () => {
-                    window.removeEventListener("mousemove", onMove);
-                    window.removeEventListener("mouseup", onUp);
-                  };
-
-                  window.addEventListener("mousemove", onMove);
-                  window.addEventListener("mouseup", onUp);
-                }}
-                title="Drag to resize"
-              />
-              <div className="p-4 lg:p-6">
-                <QuestionSidebar />
+        <AssistantRuntimeProvider runtime={runtime}>
+          {activeExperience === "lesson" && lessonState ? (
+            <>
+              <div className="flex-1 min-w-0 min-h-0 bg-white">
+                {(() => {
+                  const widgets: string[] = lessonState.slideResponseConfig?.widgets || (
+                    lessonState.slideResponseType === "both"
+                      ? ["text", "drawing"]
+                      : [lessonState.slideResponseType || "text"]
+                  );
+                  const showDrawing = widgets.includes("drawing");
+                  const digits = String(lessonState.lesson.pageCount || 1).length;
+                  const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
+                  return (
+                    <LessonStage
+                      lessonId={lessonState.lesson.id}
+                      slideFilename={slideFilename}
+                      currentSlideIndex={lessonState.currentSlideIndex}
+                      showDrawing={showDrawing}
+                      onDrawingChange={showDrawing ? handleDrawingChange : undefined}
+                    />
+                  );
+                })()}
               </div>
-            </div>
+              <aside
+                className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
+                style={sidebarOpen ? { width: Math.max(420, sidebarWidth) } : undefined}
+              >
+                {sidebarOpen && (
+                  <div className="relative h-full">
+                    <div
+                      className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
+                      onMouseDown={(e) => {
+                        const startX = e.clientX;
+                        const startWidth = sidebarWidth;
+
+                        const onMove = (ev: MouseEvent) => {
+                          const delta = startX - ev.clientX;
+                          const next = Math.min(720, Math.max(420, startWidth + delta));
+                          setSidebarWidth(next);
+                        };
+
+                        const onUp = () => {
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      }}
+                      title="Drag to resize"
+                    />
+                    <div className="p-4 lg:p-6 space-y-4">
+                      <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-600">
+                        <button
+                          onClick={() => setLessonTab("responses")}
+                          className={`rounded-full px-3 py-1 ${
+                            lessonTab === "responses"
+                              ? "bg-indigo-100 text-indigo-700"
+                              : "text-zinc-600 hover:bg-zinc-100"
+                          }`}
+                        >
+                          Responses
+                        </button>
+                        <button
+                          onClick={() => setLessonTab("chat")}
+                          className={`rounded-full px-3 py-1 ${
+                            lessonTab === "chat"
+                              ? "bg-amber-100 text-amber-700"
+                              : "text-zinc-600 hover:bg-zinc-100"
+                          }`}
+                        >
+                          Chat
+                        </button>
+                        <button
+                          onClick={() => setLessonTab("calculator")}
+                          className={`rounded-full px-3 py-1 ${
+                            lessonTab === "calculator"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "text-zinc-600 hover:bg-zinc-100"
+                          }`}
+                        >
+                          Calculator
+                        </button>
+                      </div>
+                      {lessonTab === "responses" ? (
+                        <LessonSidebar
+                          lesson={{
+                            id: lessonState.lesson.id,
+                            title: lessonState.lesson.title,
+                            pageCount: lessonState.lesson.pageCount,
+                          }}
+                          session={{
+                            id: lessonState.session.id,
+                            mode: lessonState.session.mode,
+                          }}
+                          currentSlideIndex={lessonState.currentSlideIndex}
+                          currentSlideId={lessonState.currentSlideId}
+                          responseType={lessonState.slideResponseType || "text"}
+                          responseConfig={lessonState.slideResponseConfig}
+                          responseText={lessonResponseText}
+                          onResponseTextChange={setLessonResponseText}
+                          onAutoSaveResponse={handleAutoSaveLessonResponse}
+                          onChangeSlide={handleLessonSlideChange}
+                          onSubmitResponse={handleLessonResponse}
+                          onSaveDrawing={saveCurrentDrawing}
+                        />
+                      ) : lessonTab === "chat" ? (
+                        <div className="h-[70vh] min-h-[520px]">
+                          <Thread />
+                        </div>
+                      ) : (
+                        <div className="flex h-[70vh] min-h-[520px] flex-col rounded-xl border border-zinc-200 bg-white">
+                          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200">
+                            <span className="text-xs font-semibold uppercase text-zinc-500">Desmos Calculator</span>
+                            <button
+                              onClick={() => setCalcLarge((v) => !v)}
+                              className="text-[11px] text-zinc-500 hover:text-zinc-700"
+                            >
+                              {calcLarge ? "Compact" : "Large"}
+                            </button>
+                          </div>
+                          <iframe
+                            src="https://www.desmos.com/testing/texas/graphing"
+                            className="w-full flex-1 border-none"
+                            title="Desmos Calculator"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </aside>
+            </>
+          ) : (
+            <>
+              <div className="flex-1 min-w-0 min-h-0">
+                <Thread />
+              </div>
+              <aside
+                className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
+                style={sidebarOpen ? { width: sidebarWidth } : undefined}
+              >
+                {sidebarOpen && (
+                  <div className="relative h-full">
+                    <div
+                      className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
+                      onMouseDown={(e) => {
+                        const startX = e.clientX;
+                        const startWidth = sidebarWidth;
+
+                        const onMove = (ev: MouseEvent) => {
+                          const delta = startX - ev.clientX;
+                          const next = Math.min(720, Math.max(360, startWidth + delta));
+                          setSidebarWidth(next);
+                        };
+
+                        const onUp = () => {
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      }}
+                      title="Drag to resize"
+                    />
+                    <div className="p-4 lg:p-6">
+                      <QuestionSidebar />
+                    </div>
+                  </div>
+                )}
+              </aside>
+            </>
           )}
-        </aside>
+        </AssistantRuntimeProvider>
       </div>
 
       {/* Teacher Mode Toggle */}
@@ -611,49 +978,7 @@ export default function Home() {
         <Link2 className="w-5 h-5" />
       </Link>
 
-      <button
-        onClick={() => setCalcOpen((v) => !v)}
-        className={`fixed z-50 h-12 w-12 rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 flex items-center justify-center ${calcSide === "right" ? "bottom-4 right-4" : "bottom-4 left-4"}`}
-        aria-label="Toggle calculator"
-      >
-        <Calculator className="w-5 h-5" />
-      </button>
-
-      <div
-        className={`fixed z-40 ${calcSide === "right" ? "bottom-4 right-20" : "bottom-4 left-20"} ${calcOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"} transition-opacity duration-150`}
-      >
-        <div className={`${calcLarge ? "w-[720px] h-[70vh]" : "w-[520px] h-[620px]"} bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden flex flex-col`}>
-          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200 dark:border-zinc-800">
-            <span className="text-xs font-semibold uppercase text-zinc-500">Desmos Calculator</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCalcSide((s) => (s === "right" ? "left" : "right"))}
-                className="text-[11px] text-zinc-500 hover:text-zinc-700"
-              >
-                {calcSide === "right" ? "Dock Left" : "Dock Right"}
-              </button>
-              <button
-                onClick={() => setCalcLarge((v) => !v)}
-                className="text-[11px] text-zinc-500 hover:text-zinc-700"
-              >
-                {calcLarge ? "Compact" : "Large"}
-              </button>
-              <button
-                onClick={() => setCalcOpen(false)}
-                className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close calculator"
-              >
-                <X className="w-4 h-4 text-zinc-500" />
-              </button>
-            </div>
-          </div>
-          <iframe
-            src="https://www.desmos.com/testing/texas/graphing"
-            className="w-full flex-1 border-none"
-            title="Desmos Calculator"
-          />
-        </div>
-      </div>
+      {/* Calculator is now a sidebar tab */}
     </div>
   );
 }

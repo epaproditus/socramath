@@ -14,13 +14,15 @@ export async function POST(req: Request) {
         const body = await req.json();
         const config = await prisma.appConfig.findFirst();
         const apiKey = config?.apiKey || process.env.DEEPSEEK_API_KEY || "";
-        const baseUrl = config?.baseUrl || "https://api.deepseek.com";
+        let baseUrl = config?.baseUrl || "https://api.deepseek.com";
+        if (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+        if (baseUrl.endsWith("/v1")) baseUrl = baseUrl.slice(0, -3);
 
         if (!apiKey) {
             return new NextResponse('Missing API Key', { status: 500 });
         }
 
-        const endpoint = `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+        const endpoint = `${baseUrl}/v1/chat/completions`;
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {

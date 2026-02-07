@@ -153,6 +153,7 @@ model AppConfig {
   baseUrl   String?
   apiKey    String?
   model     String?
+  systemPrompt String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -179,6 +180,10 @@ model LessonSlide {
   lessonId  String
   index     Int
   text      String?
+  prompt    String?
+  rubric    String? // JSON array of strings
+  responseType String? // "text" | "drawing" | "both"
+  responseConfig String? // JSON config for widgets
   createdAt DateTime @default(now())
 
   lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
@@ -221,6 +226,8 @@ model LessonResponse {
   slideId   String
   userId    String
   response  String
+  responseType String? // "text" | "drawing" | "both"
+  drawingPath String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

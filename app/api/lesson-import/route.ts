@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { PrismaClient } from "@prisma/client";
 import pdfParse from "pdf-parse";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, writeFile, rm, readdir, rename } from "fs/promises";
 import path from "path";
+import { spawn } from "child_process";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,7 @@ const prisma = new PrismaClient();
 function normalizeText(input: string) {
   return input.replace(/\s+/g, " ").trim();
 }
+
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
       }),
   });
   const content = normalizeText(parsed.text || "");
+  const pageCount = parsed.numpages || parsed.numrender || pageTexts.length || 0;
 
   if (!content) {
     return new Response("No text found in PDF", { status: 400 });
@@ -73,7 +76,7 @@ export async function POST(req: Request) {
         title: lessonTitle,
         content,
         sourceFilename: filename,
-        pageCount: parsed.numpages || pageTexts.length || 0,
+        pageCount,
         isActive: true,
       },
     });
@@ -85,27 +88,67 @@ export async function POST(req: Request) {
   await writeFile(pdfDiskPath, buffer);
   const publicPdfPath = `/uploads/lessons/${lesson.id}/source.pdf`;
 
+  const slidesDir = path.join(safeDir, "slides");
+  await rm(slidesDir, { recursive: true, force: true });
+  await mkdir(slidesDir, { recursive: true });
+
   await prisma.lesson.update({
     where: { id: lesson.id },
     data: { pdfPath: publicPdfPath },
   });
 
   if (pageTexts.length) {
-    await prisma.lessonSlide.createMany({
-      data: pageTexts.map((text, idx) => ({
-        lessonId: lesson.id,
-        index: idx + 1,
-        text,
-      })),
+    await prisma.$transaction(
+      pageTexts.map((text, idx) =>
+        prisma.lessonSlide.create({
+          data: {
+            lessonId: lesson.id,
+            index: idx + 1,
+            text,
+          },
+        })
+      )
+    );
+  } else if (pageCount) {
+    await prisma.$transaction(
+      Array.from({ length: pageCount }).map((_, idx) =>
+        prisma.lessonSlide.create({
+          data: {
+            lessonId: lesson.id,
+            index: idx + 1,
+            text: "",
+          },
+        })
+      )
+    );
+  }
+
+  // Render each page to a PNG for fast slide display (Pear Deck style)
+  if (pageCount) {
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn("pdftoppm", ["-png", "-r", "144", pdfDiskPath, path.join(slidesDir, "slide")]);
+      let stderr = "";
+      proc.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      proc.on("error", reject);
+      proc.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(stderr || "pdftoppm failed"));
+      });
     });
-  } else if (parsed.numpages) {
-    await prisma.lessonSlide.createMany({
-      data: Array.from({ length: parsed.numpages }).map((_, idx) => ({
-        lessonId: lesson.id,
-        index: idx + 1,
-        text: "",
-      })),
-    });
+
+    const files = await readdir(slidesDir);
+    await Promise.all(
+      files.map(async (file) => {
+        const match = file.match(/^slide-(\d+)\.png$/);
+        if (!match) return;
+        const pageNum = match[1];
+        const from = path.join(slidesDir, file);
+        const to = path.join(slidesDir, `${pageNum}.png`);
+        await rename(from, to);
+      })
+    );
   }
 
   return Response.json({

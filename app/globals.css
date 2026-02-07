@@ -1,5 +1,46 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./styles/excalidraw.css";
+
+/* Excalidraw overlay should be transparent over slides */
+.excalidraw-transparent .App,
+.excalidraw-transparent .layer-ui__wrapper,
+.excalidraw-transparent .excalidraw-container {
+  background: transparent !important;
+}
+
+/* Hide Excalidraw usage hints over slides */
+.excalidraw-transparent .HintViewer {
+  display: none !important;
+}
+
+/* Strip extra Excalidraw chrome for lesson overlay (keep main toolbar) */
+.excalidraw-transparent .App-menu_right,
+.excalidraw-transparent .App-menu_bottom {
+  display: none !important;
+}
+
+/* Minimal toolbar: hide extra tools + lock/undo/redo/zoom */
+.excalidraw-transparent .App-toolbar__extra-tools-trigger,
+.excalidraw-transparent [data-testid="toolbar-lock"],
+.excalidraw-transparent .undo-redo-buttons,
+.excalidraw-transparent .zoom-actions {
+  display: none !important;
+}
+
+/* Keep Excalidraw toolbar visible while scrolling */
+.excalidraw-transparent .App-top-bar {
+  position: fixed !important;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 1200;
+  pointer-events: auto;
+}
+
+.excalidraw-transparent .App-menu_top {
+  pointer-events: auto !important;
+}
 
 @custom-variant dark (&:is(.dark *));
 

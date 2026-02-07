@@ -61,6 +61,9 @@ export async function GET() {
     orderBy: { index: "asc" },
     select: { id: true, index: true },
   });
+  const slide = await prisma.lessonSlide.findFirst({
+    where: { lessonId: lesson.id, index: currentSlideIndex },
+  });
 
   return Response.json({
     lesson: {
@@ -68,6 +71,7 @@ export async function GET() {
       title: lesson.title,
       pdfPath: lesson.pdfPath,
       pageCount: lesson.pageCount,
+      content: lesson.content,
     },
     session: {
       id: lessonSession.id,
@@ -75,6 +79,12 @@ export async function GET() {
       currentSlideIndex: lessonSession.currentSlideIndex,
     },
     currentSlideIndex,
+    currentSlideId: slide?.id || null,
+    slideText: slide?.text || "",
+    slidePrompt: slide?.prompt || "",
+    slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
+    slideResponseType: slide?.responseType || "text",
+    slideResponseConfig: slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
     slides,
   });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Upload, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Upload, CheckCircle2, XCircle, RefreshCw, Trash2 } from "lucide-react";
 
 type LessonRow = {
   id: string;
@@ -85,6 +85,24 @@ export default function LessonBuilder() {
       await loadLessons();
     } catch (err: any) {
       setError(err?.message || "Failed to set active lesson");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteLesson = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/lessons", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await loadLessons();
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete lesson");
     } finally {
       setLoading(false);
     }
@@ -201,6 +219,14 @@ export default function LessonBuilder() {
                     Set Active
                   </button>
                 )}
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                  onClick={() => deleteLesson(lesson.id)}
+                  disabled={loading}
+                  title="Delete lesson"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
               </div>
             </div>
           ))}

@@ -411,10 +411,11 @@ export async function getAppConfig() {
         baseUrl: config?.baseUrl || "",
         apiKey: config?.apiKey || "",
         model: config?.model || "",
+        systemPrompt: config?.systemPrompt || "",
     };
 }
 
-export async function saveAppConfig(input: { baseUrl: string; apiKey: string; model: string }) {
+export async function saveAppConfig(input: { baseUrl: string; apiKey: string; model: string; systemPrompt?: string }) {
     const session = await auth();
     const adminEmail = process.env.ADMIN_EMAIL;
 
@@ -435,6 +436,7 @@ export async function saveAppConfig(input: { baseUrl: string; apiKey: string; mo
                 baseUrl: input.baseUrl || null,
                 apiKey: input.apiKey || null,
                 model: input.model || null,
+                systemPrompt: input.systemPrompt || null,
             },
         });
         return;
@@ -446,6 +448,7 @@ export async function saveAppConfig(input: { baseUrl: string; apiKey: string; mo
             baseUrl: input.baseUrl || null,
             apiKey: input.apiKey || null,
             model: input.model || null,
+            systemPrompt: input.systemPrompt || null,
         },
     });
 }
@@ -465,7 +468,10 @@ export async function fetchModelList(baseUrl: string, apiKey: string) {
     }
 
     if (!baseUrl) return [];
-    const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+    let normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+    if (normalizedBase.endsWith("/v1")) {
+        normalizedBase = normalizedBase.slice(0, -3);
+    }
     const url = `${normalizedBase}/v1/models`;
     const res = await fetch(url, {
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},

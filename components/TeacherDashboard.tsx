@@ -4,6 +4,7 @@ import { useAppStore } from "@/lib/store";
 import { fetchSessionsList, fetchSessionById, fetchSessionAnswerMatrix, setActiveSession, deleteSessionAction, setAnswerKey, fetchSessionProgress, setSessionLock, setStudentLock, updateSessionTitleAction, getAppConfig, saveAppConfig, fetchModelList } from "@/app/actions";
 import { ArrowLeft, Sparkles, Plus, Trash2, Upload, CheckCircle2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 
 export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "live" }) {
@@ -328,16 +329,12 @@ export default function TeacherDashboard({ mode = "live" }: { mode?: "prep" | "l
                 </div>
                 {mode === "prep" && (
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => {
-                                setSettingsOpen(true);
-                                setConfigError(null);
-                                loadConfig();
-                            }}
+                        <Link
+                            href="/teacher/settings"
                             className="flex items-center gap-2 px-3 py-1.5 border border-zinc-200 text-zinc-700 hover:bg-zinc-100 rounded-lg text-sm font-medium transition-colors"
                         >
                             <span>Settings</span>
-                        </button>
+                        </Link>
                         <button
                             onClick={() => setImportOpen(true)}
                             className="flex items-center gap-2 px-3 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors"

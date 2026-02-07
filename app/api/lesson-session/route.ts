@@ -41,11 +41,29 @@ export async function GET() {
     });
   }
 
-  const slides = await prisma.lessonSlide.findMany({
+  let slides = await prisma.lessonSlide.findMany({
     where: { lessonId: lesson.id },
     orderBy: { index: "asc" },
     select: { id: true, index: true },
   });
+  if (!slides.length && lesson.pageCount) {
+    await prisma.$transaction(
+      Array.from({ length: lesson.pageCount }).map((_, idx) =>
+        prisma.lessonSlide.create({
+          data: {
+            lessonId: lesson.id,
+            index: idx + 1,
+            text: "",
+          },
+        })
+      )
+    );
+    slides = await prisma.lessonSlide.findMany({
+      where: { lessonId: lesson.id },
+      orderBy: { index: "asc" },
+      select: { id: true, index: true },
+    });
+  }
 
   return Response.json({
     lesson: {

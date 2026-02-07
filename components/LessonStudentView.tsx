@@ -28,6 +28,11 @@ export default function LessonStudentView() {
     return slide?.id || null;
   }, [state?.slides, currentSlideIndex]);
 
+  const slideFilename = useMemo(() => {
+    const digits = String(slideCount).length;
+    return `${String(currentSlideIndex).padStart(digits, "0")}.png`;
+  }, [currentSlideIndex, slideCount]);
+
   const loadState = async () => {
     setLoading(true);
     try {
@@ -171,10 +176,18 @@ export default function LessonStudentView() {
             </div>
 
             <div className="flex-1 overflow-auto p-3">
-              {state?.lesson.pdfPath ? (
-                <iframe
-                  src={`${state.lesson.pdfPath}#page=${currentSlideIndex}&view=FitH`}
-                  className="h-[420px] w-full rounded-lg border border-zinc-200"
+              {state?.lesson.id ? (
+                <img
+                  src={`/uploads/lessons/${state.lesson.id}/slides/${slideFilename}`}
+                  alt={`Slide ${currentSlideIndex}`}
+                  className="h-[420px] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const fallback = `/uploads/lessons/${state.lesson.id}/slides/${currentSlideIndex}.png`;
+                    if (target.src.endsWith(slideFilename)) {
+                      target.src = fallback;
+                    }
+                  }}
                 />
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-sm text-zinc-500">
