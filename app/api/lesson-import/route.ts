@@ -23,7 +23,6 @@ export async function POST(req: Request) {
 
   const form = await req.formData();
   const file = form.get("file");
-  const answerKey = form.get("answerKey");
 
   if (!file || !(file instanceof File)) {
     return new Response("Missing file", { status: 400 });
@@ -126,25 +125,6 @@ export async function POST(req: Request) {
         })
       )
     );
-  }
-
-  if (answerKey && answerKey instanceof File) {
-    const answerName = answerKey.name || "answer-key.pdf";
-    if (!answerName.toLowerCase().endsWith(".pdf")) {
-      return new Response("Answer key must be a PDF", { status: 400 });
-    }
-    const answerBuffer = Buffer.from(await answerKey.arrayBuffer());
-    const { pageTexts: answerTexts } = await parsePdf(answerBuffer);
-    if (answerTexts.length) {
-      await prisma.$transaction(
-        answerTexts.map((text, idx) =>
-          prisma.lessonSlide.updateMany({
-            where: { lessonId: lesson.id, index: idx + 1 },
-            data: { rubric: JSON.stringify([text]) },
-          })
-        )
-      );
-    }
   }
 
   // Render each page to a PNG for fast slide display (Pear Deck style)
