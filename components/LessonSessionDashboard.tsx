@@ -325,7 +325,7 @@ export default function LessonSessionDashboard() {
                       Response Widgets
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {["text", "drawing", "geogebra"].map((widget) => {
+                      {["text", "geogebra"].map((widget) => {
                         const widgets: string[] = slideDetail.responseConfig?.widgets || [];
                         const enabled = widgets.includes(widget);
                         return (
@@ -348,13 +348,13 @@ export default function LessonSessionDashboard() {
                                 : "border border-zinc-200 text-zinc-600"
                             }`}
                           >
-                            {widget === "text" ? "Text" : widget === "drawing" ? "Drawing" : "GeoGebra"}
+                            {widget === "text" ? "Text" : "GeoGebra"}
                           </button>
                         );
                       })}
                     </div>
                     <div className="mt-2 text-[11px] text-zinc-500">
-                      Choose which response widgets appear for students on this slide.
+                      Drawing is always on for students. Choose additional widgets for this slide.
                     </div>
                   </div>
                   {slideDetail.responseConfig?.widgets?.includes("geogebra") && (

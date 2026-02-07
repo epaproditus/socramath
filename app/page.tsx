@@ -8,7 +8,6 @@ import Link from "next/link";
 import { useRef, useEffect, useState } from "react";
 import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
-import LessonSidebar from "@/components/LessonSidebar";
 import LessonStage from "@/components/LessonStage";
 
 type LessonState = {
@@ -54,7 +53,7 @@ export default function Home() {
   } = useAppStore();
   const sessionRef = useRef(currentSession);
   const [calcLarge, setCalcLarge] = useState(false);
-  const [lessonTab, setLessonTab] = useState<"responses" | "chat" | "calculator">("responses");
+  const [lessonTab, setLessonTab] = useState<"responses" | "chat" | "calculator">("chat");
   const [lessonResponseText, setLessonResponseText] = useState("");
   const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("lesson");
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
@@ -803,11 +802,12 @@ export default function Home() {
               <div className="flex-1 min-w-0 min-h-0 bg-white">
                 {lessonState ? (
                   (() => {
-                    const widgets: string[] = lessonState.slideResponseConfig?.widgets || (
+                    const rawWidgets: string[] = lessonState.slideResponseConfig?.widgets || (
                       lessonState.slideResponseType === "both"
                         ? ["text", "drawing"]
                         : [lessonState.slideResponseType || "text"]
                     );
+                    const widgets = Array.from(new Set([...(rawWidgets || []), "drawing"]));
                     const showDrawing = widgets.includes("drawing");
                     const digits = String(lessonState.lesson.pageCount || 1).length;
                     const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
