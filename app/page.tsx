@@ -305,6 +305,12 @@ export default function Home() {
             SLIDE RUBRIC:
             ${lessonState?.slideRubric?.length ? lessonState.slideRubric.join(" | ") : "No rubric provided."}
 
+            SLIDE STEPS:
+            ${lessonState?.slideResponseConfig?.steps || "None."}
+
+            SLIDE LINKS:
+            ${lessonState?.slideResponseConfig?.links || "None."}
+
             SLIDE RESPONSE TYPE:
             ${lessonState?.slideResponseType || "text"}
 

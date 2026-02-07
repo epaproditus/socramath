@@ -22,13 +22,6 @@ type SlideDetail = {
   responseConfig: Record<string, any>;
 };
 
-type ResponseRow = {
-  id: string;
-  response: string;
-  user: { id: string; name?: string | null; email?: string | null; classPeriod?: string | null };
-  updatedAt: string;
-};
-
 export default function LessonSessionDashboard() {
   const [data, setData] = useState<LessonSessionPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +74,16 @@ export default function LessonSessionDashboard() {
       const json = await res.json();
       setSlideDetail({
         ...json,
+        responseConfig: json.responseConfig || {},
       });
       const rubricHtml = Array.isArray(json.rubric) ? json.rubric.join("\n") : "";
+      const responseConfig = json.responseConfig || {};
       lastSavedRef.current = JSON.stringify({
         id: json.id,
         prompt: json.prompt || "",
         rubric: rubricHtml,
+        steps: responseConfig.steps || "",
+        links: responseConfig.links || "",
       });
       hydratedRef.current = true;
     };
@@ -119,6 +116,7 @@ export default function LessonSessionDashboard() {
         slideId: slideDetail.id,
         prompt: slideDetail.prompt,
         rubric: slideDetail.rubric,
+        responseConfig: slideDetail.responseConfig || {},
       }),
     });
     setSlideSaving(false);
@@ -128,6 +126,8 @@ export default function LessonSessionDashboard() {
       id: slideDetail.id,
       prompt: slideDetail.prompt || "",
       rubric: Array.isArray(slideDetail.rubric) ? slideDetail.rubric.join("\n") : "",
+      steps: slideDetail.responseConfig?.steps || "",
+      links: slideDetail.responseConfig?.links || "",
     });
   };
 
@@ -142,6 +142,8 @@ export default function LessonSessionDashboard() {
         id: slideDetail.id,
         prompt: slideDetail.prompt || "",
         rubric: Array.isArray(slideDetail.rubric) ? slideDetail.rubric.join("\n") : "",
+        steps: slideDetail.responseConfig?.steps || "",
+        links: slideDetail.responseConfig?.links || "",
       });
       if (snapshot !== lastSavedRef.current) {
         saveSlideDetail();
@@ -293,6 +295,40 @@ export default function LessonSessionDashboard() {
                       setSlideDetail({ ...slideDetail, rubric });
                       scheduleAutosave();
                     }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                    Steps (one per line)
+                  </label>
+                  <textarea
+                    value={slideDetail.responseConfig?.steps || ""}
+                    onChange={(e) => {
+                      setSlideDetail({
+                        ...slideDetail,
+                        responseConfig: { ...slideDetail.responseConfig, steps: e.target.value },
+                      });
+                      scheduleAutosave();
+                    }}
+                    className="h-28 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    placeholder="Step 1...\nStep 2..."
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                    Links (one per line)
+                  </label>
+                  <textarea
+                    value={slideDetail.responseConfig?.links || ""}
+                    onChange={(e) => {
+                      setSlideDetail({
+                        ...slideDetail,
+                        responseConfig: { ...slideDetail.responseConfig, links: e.target.value },
+                      });
+                      scheduleAutosave();
+                    }}
+                    className="h-24 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    placeholder="Label | https://example.com"
                   />
                 </div>
                 <div className="text-xs text-zinc-500">
