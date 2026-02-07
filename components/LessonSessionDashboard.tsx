@@ -189,7 +189,7 @@ export default function LessonSessionDashboard() {
       )}
 
       {data && (
-        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)_360px]">
+        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-zinc-200 bg-white p-3">
             <div className="mb-3 text-xs font-semibold uppercase text-zinc-500">Slides</div>
             <div className="space-y-3 overflow-y-auto max-h-[78vh] pr-1">
@@ -492,19 +492,6 @@ export default function LessonSessionDashboard() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-200 bg-white p-3">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase text-zinc-500">Sidepanel Preview</div>
-              <div className="text-[11px] text-zinc-400">Student view</div>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 overflow-hidden h-[78vh]">
-              <iframe
-                title="Student preview"
-                src="/"
-                className="h-full w-full"
-              />
-            </div>
-          </div>
         </div>
       )}
     </div>
