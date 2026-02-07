@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 type Slide = { id: string; index: number };
@@ -30,7 +30,6 @@ type ResponseRow = {
 
 export default function LessonSessionDashboard() {
   const [data, setData] = useState<LessonSessionPayload | null>(null);
-  const [loading, setLoading] = useState(false);
   const [responses, setResponses] = useState<ResponseRow[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +51,6 @@ export default function LessonSessionDashboard() {
   }, [currentSlideIndex, slideCount]);
 
   const loadData = async () => {
-    setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/lesson-session");
@@ -61,8 +59,6 @@ export default function LessonSessionDashboard() {
       setData(json);
     } catch (err: any) {
       setError(err?.message || "Failed to load lesson session");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -165,13 +161,6 @@ export default function LessonSessionDashboard() {
             >
               <ArrowLeft className="h-4 w-4" /> Hub
             </Link>
-            <button
-              onClick={loadData}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
-              disabled={loading}
-            >
-              <RefreshCw className="h-4 w-4" /> Refresh
-            </button>
           </div>
         </div>
       </div>
