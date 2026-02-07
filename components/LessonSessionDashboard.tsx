@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
@@ -30,12 +30,13 @@ type ResponseRow = {
 
 export default function LessonSessionDashboard() {
   const [data, setData] = useState<LessonSessionPayload | null>(null);
-  const [responses, setResponses] = useState<ResponseRow[]>([]);
-  const [responsesLoading, setResponsesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slideDetail, setSlideDetail] = useState<SlideDetail | null>(null);
   const [slideSaving, setSlideSaving] = useState(false);
   const [slideMessage, setSlideMessage] = useState<string | null>(null);
+  const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedRef = useRef<string | null>(null);
+  const hydratedRef = useRef(false);
 
   const currentSlideIndex = data?.session.currentSlideIndex || 1;
   const slideCount = data?.lesson.pageCount || data?.slides.length || 1;
@@ -62,32 +63,13 @@ export default function LessonSessionDashboard() {
     }
   };
 
-  const loadResponses = async (slideId: string | null, sessionId?: string) => {
-    if (!slideId || !sessionId) return;
-    setResponsesLoading(true);
-    try {
-      const res = await fetch(`/api/lesson-response?slideId=${slideId}&sessionId=${sessionId}`);
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      setResponses(json || []);
-    } catch (err) {
-      setResponses([]);
-    } finally {
-      setResponsesLoading(false);
-    }
-  };
-
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
     if (!currentSlideId || !data?.session.id) return;
-    loadResponses(currentSlideId, data.session.id);
-    const interval = setInterval(() => {
-      loadResponses(currentSlideId, data.session.id);
-    }, 2000);
-    return () => clearInterval(interval);
+    return () => {};
   }, [currentSlideId, data?.session.id]);
 
   useEffect(() => {
@@ -96,17 +78,15 @@ export default function LessonSessionDashboard() {
       const res = await fetch(`/api/lesson-slide?slideId=${currentSlideId}`);
       if (!res.ok) return;
       const json = await res.json();
-      const widgets = Array.isArray(json.responseConfig?.widgets)
-        ? json.responseConfig.widgets
-        : json.responseType === "both"
-          ? ["text", "drawing"]
-          : json.responseType
-            ? [json.responseType]
-            : ["text"];
       setSlideDetail({
         ...json,
-        responseConfig: { ...json.responseConfig, widgets },
       });
+      lastSavedRef.current = JSON.stringify({
+        id: json.id,
+        prompt: json.prompt || "",
+        rubric: Array.isArray(json.rubric) ? json.rubric : [],
+      });
+      hydratedRef.current = true;
     };
     loadSlide();
   }, [currentSlideId]);
@@ -137,13 +117,34 @@ export default function LessonSessionDashboard() {
         slideId: slideDetail.id,
         prompt: slideDetail.prompt,
         rubric: slideDetail.rubric,
-        responseType: slideDetail.responseType,
-        responseConfig: slideDetail.responseConfig,
       }),
     });
     setSlideSaving(false);
     setSlideMessage("Saved.");
-    setTimeout(() => setSlideMessage(null), 1500);
+    setTimeout(() => setSlideMessage(null), 1200);
+    lastSavedRef.current = JSON.stringify({
+      id: slideDetail.id,
+      prompt: slideDetail.prompt || "",
+      rubric: slideDetail.rubric || [],
+    });
+  };
+
+  const scheduleAutosave = () => {
+    if (!slideDetail) return;
+    if (!hydratedRef.current) return;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+    autosaveTimerRef.current = setTimeout(() => {
+      const snapshot = JSON.stringify({
+        id: slideDetail.id,
+        prompt: slideDetail.prompt || "",
+        rubric: slideDetail.rubric || [],
+      });
+      if (snapshot !== lastSavedRef.current) {
+        saveSlideDetail();
+      }
+    }, 600);
   };
 
   return (
@@ -178,7 +179,7 @@ export default function LessonSessionDashboard() {
       )}
 
       {data && (
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] min-h-[calc(100vh-140px)]">
+        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px] min-h-[calc(100vh-140px)]">
           <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full">
             <div className="space-y-2 overflow-y-auto h-full pr-1">
               {data.slides.map((slide) => {
@@ -256,9 +257,53 @@ export default function LessonSessionDashboard() {
                 </div>
               )}
             </div>
-
           </div>
 
+          <aside className="rounded-2xl border border-zinc-200 bg-white p-3 h-full">
+            <div className="mb-3 text-xs font-semibold uppercase text-zinc-500">Rubric</div>
+            {!slideDetail && (
+              <div className="text-sm text-zinc-500">Select a slide to edit.</div>
+            )}
+            {slideDetail && (
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                    Prompt
+                  </label>
+                  <textarea
+                    value={slideDetail.prompt}
+                    onChange={(e) => {
+                      setSlideDetail({ ...slideDetail, prompt: e.target.value });
+                      scheduleAutosave();
+                    }}
+                    className="h-28 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    placeholder="What should students think about on this slide?"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                    Rubric (one per line)
+                  </label>
+                  <textarea
+                    value={slideDetail.rubric.join("\n")}
+                    onChange={(e) => {
+                      const rubric = e.target.value
+                        .split("\n")
+                        .map((r) => r.trim())
+                        .filter(Boolean);
+                      setSlideDetail({ ...slideDetail, rubric });
+                      scheduleAutosave();
+                    }}
+                    className="h-36 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    placeholder="e.g. Uses a^2 + b^2 = c^2"
+                  />
+                </div>
+                <div className="text-xs text-zinc-500">
+                  {slideSaving ? "Saving..." : slideMessage || "Autosave on edit"}
+                </div>
+              </div>
+            )}
+          </aside>
         </div>
       )}
     </div>
