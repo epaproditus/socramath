@@ -24,6 +24,8 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const debounceRef = useRef<number | null>(null);
   const textRef = useRef<string>("");
+  const onChangeRef = useRef(onChange);
+  const onTextChangeRef = useRef(onTextChange);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(false);
@@ -47,17 +49,25 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
   }, []);
 
   useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    onTextChangeRef.current = onTextChange;
+  }, [onTextChange]);
+
+  useEffect(() => {
     setImageLoaded(false);
     setBackgroundUrl(imageUrl);
     setAttemptedPlainFallback(false);
     textRef.current = "";
-    if (onTextChange) onTextChange("");
+    onTextChangeRef.current?.("");
     if (apiRef.current) {
       apiRef.current.updateScene({ elements: [] });
       const appState = apiRef.current.getAppState();
       apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0, zoom: { value: 1 } } });
     }
-  }, [imageUrl, onTextChange]);
+  }, [imageUrl]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -153,14 +163,14 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
         ctx.drawImage(drawingCanvas, 0, 0, out.width, out.height);
       }
       const dataUrl = out.toDataURL("image/png");
-      onChange?.(dataUrl);
+      onChangeRef.current?.(dataUrl);
     } catch (err) {
       console.warn("lesson overlay export skipped", err);
     }
   };
 
   const handleChange = () => {
-    if (onTextChange && apiRef.current) {
+    if (onTextChangeRef.current && apiRef.current) {
       const elements = apiRef.current.getSceneElements() as SceneTextElement[];
       const text = elements
         .filter((el) => el?.type === "text" && typeof el?.text === "string")
@@ -169,10 +179,10 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
         .join("\n");
       if (text !== textRef.current) {
         textRef.current = text;
-        onTextChange(text);
+        onTextChangeRef.current(text);
       }
     }
-    if (!onChange) return;
+    if (!onChangeRef.current) return;
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current);
     }
