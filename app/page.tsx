@@ -785,7 +785,10 @@ export default function Home() {
                           onDrawingTextChange={(text) => {
                             const slideId = lessonState.currentSlideId;
                             if (!slideId) return;
-                            setLessonDrawingTextBySlide((prev) => ({ ...prev, [slideId]: text }));
+                            setLessonDrawingTextBySlide((prev) => {
+                              if ((prev[slideId] || "") === (text || "")) return prev;
+                              return { ...prev, [slideId]: text };
+                            });
                           }}
                         />
                       );
