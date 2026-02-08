@@ -258,6 +258,7 @@ export default function LessonExcalidrawOverlay({
       const signature = JSON.stringify(scenePayload);
       if (signature !== lastEmittedSceneRef.current) {
         lastEmittedSceneRef.current = signature;
+        appliedSceneRef.current = `${imageUrl}::${signature}`;
         onSceneChangeRef.current(scenePayload);
       }
     }

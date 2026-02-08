@@ -223,16 +223,6 @@ export default function LessonSessionDashboard() {
     if (!slideDetail?.id) return;
     const targetSlideId = slideDetail.id;
     if (sceneSaveTimerRef.current) clearTimeout(sceneSaveTimerRef.current);
-    setSlideDetail((prev) => {
-      if (!prev || prev.id !== targetSlideId) return prev;
-      return {
-        ...prev,
-        responseConfig: {
-          ...(prev.responseConfig || {}),
-          sceneData,
-        },
-      };
-    });
     sceneSaveTimerRef.current = setTimeout(async () => {
       const res = await fetch("/api/lesson-slide", {
         method: "PATCH",
