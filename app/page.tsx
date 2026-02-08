@@ -784,6 +784,7 @@ export default function Home() {
                           onChangeSlide={handleLessonSlideChange}
                           showDrawing={showDrawing}
                           onDrawingChange={showDrawing ? handleDrawingChange : undefined}
+                          sceneData={lessonState.slideResponseConfig?.sceneData}
                           onDrawingTextChange={(text) => {
                             const slideId = lessonState.currentSlideId;
                             if (!slideId) return;

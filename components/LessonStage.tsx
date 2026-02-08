@@ -14,6 +14,12 @@ type LessonStageProps = {
   showDrawing: boolean;
   onDrawingChange?: (dataUrl: string) => void;
   onDrawingTextChange?: (text: string) => void;
+  sceneData?: {
+    snapshot?: Record<string, unknown>;
+    elements?: unknown[];
+    files?: Record<string, unknown>;
+    appState?: Record<string, unknown>;
+  };
 };
 
 export default function LessonStage({
@@ -27,6 +33,7 @@ export default function LessonStage({
   showDrawing,
   onDrawingChange,
   onDrawingTextChange,
+  sceneData,
 }: LessonStageProps) {
   const cacheParam = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
   const slideImageUrl = `/uploads/lessons/${lessonId}/slides/${slideFilename}${cacheParam}`;
@@ -41,6 +48,7 @@ export default function LessonStage({
             imageUrl={slideImageUrl}
             onChange={onDrawingChange}
             onTextChange={onDrawingTextChange}
+            sceneData={sceneData}
           />
         ) : (
           <img

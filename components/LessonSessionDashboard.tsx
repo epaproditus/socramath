@@ -203,22 +203,11 @@ export default function LessonSessionDashboard() {
     await updateSession({ currentSlideIndex: nextIndex });
   };
 
-  const handleScratchImageChange = async (dataUrl: string) => {
-    if (!slideDetail?.id) return;
-    const res = await fetch("/api/lesson-slide", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slideId: slideDetail.id, imageDataUrl: dataUrl }),
-    });
-    if (res.status === 404) {
-      await loadData();
-    }
-  };
-
   const handleSceneChange = (sceneData: {
     elements: unknown[];
     files: Record<string, unknown>;
     appState: Record<string, unknown>;
+    snapshot?: Record<string, unknown>;
   }) => {
     if (!slideDetail?.id) return;
     const targetSlideId = slideDetail.id;
@@ -384,7 +373,6 @@ export default function LessonSessionDashboard() {
                       imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
                         currentSlideCacheKey
                       )}`}
-                      onChange={handleScratchImageChange}
                       onTextChange={handleScratchTextChange}
                       sceneData={(slideDetail.responseConfig?.sceneData || undefined) as {
                         elements?: unknown[];
