@@ -3,6 +3,12 @@ import prisma from "@/lib/prisma";
 import { access, mkdir, rename, unlink, writeFile } from "fs/promises";
 import path from "path";
 
+const buildSlideFilenames = (index: number, digits: number) => {
+  const names = new Set<string>();
+  names.add(`${index}.png`);
+  names.add(`${String(index).padStart(digits, "0")}.png`);
+  return Array.from(names);
+};
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -95,7 +101,9 @@ export async function POST(req: Request) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const buffer = canvas.toBuffer("image/png");
-  await writeFile(path.join(slidesDir, `${nextIndex}.png`), buffer);
+  const nextDigits = String(Math.max(lesson.pageCount, nextIndex, 1)).length;
+  const outputFilenames = buildSlideFilenames(nextIndex, nextDigits);
+  await Promise.all(outputFilenames.map((filename) => writeFile(path.join(slidesDir, filename), buffer)));
 
   return Response.json({ id: slide.id, index: slide.index });
 }
@@ -140,7 +148,13 @@ export async function PATCH(req: Request) {
     await mkdir(slidesDir, { recursive: true });
     const base64 = imageDataUrl.split(",")[1] || "";
     const buffer = Buffer.from(base64, "base64");
-    await writeFile(path.join(slidesDir, `${existingSlide.index}.png`), buffer);
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: existingSlide.lessonId },
+      select: { pageCount: true },
+    });
+    const digits = String(Math.max(lesson?.pageCount || 1, existingSlide.index, 1)).length;
+    const outputFilenames = buildSlideFilenames(existingSlide.index, digits);
+    await Promise.all(outputFilenames.map((filename) => writeFile(path.join(slidesDir, filename), buffer)));
   }
 
   try {
@@ -154,8 +168,11 @@ export async function PATCH(req: Request) {
         text,
       },
     });
-  } catch (err: any) {
-    if (err?.code === "P2025") {
+  } catch (err: unknown) {
+    const code = typeof err === "object" && err !== null && "code" in err
+      ? (err as { code?: string }).code
+      : undefined;
+    if (code === "P2025") {
       return new Response("Slide not found", { status: 404 });
     }
     throw err;

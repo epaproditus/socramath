@@ -10,6 +10,11 @@ type LessonExcalidrawOverlayProps = {
   onTextChange?: (text: string) => void;
 };
 
+type SceneTextElement = {
+  type?: string;
+  text?: string;
+};
+
 const Excalidraw = dynamic(
   () => import("@excalidraw/excalidraw").then((mod) => mod.Excalidraw),
   { ssr: false }
@@ -24,8 +29,15 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
   const mountedRef = useRef(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [backgroundUrl, setBackgroundUrl] = useState(imageUrl);
+  const [attemptedPlainFallback, setAttemptedPlainFallback] = useState(false);
   const fallbackBackground =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAt8B9o0F8YkAAAAASUVORK5CYII=";
+
+  const toPlainSlideUrl = (url: string) => {
+    const [pathPart, queryPart] = url.split("?");
+    const plainPath = pathPart.replace(/\/0+(\d+)\.png$/, "/$1.png");
+    return queryPart ? `${plainPath}?${queryPart}` : plainPath;
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -37,6 +49,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
   useEffect(() => {
     setImageLoaded(false);
     setBackgroundUrl(imageUrl);
+    setAttemptedPlainFallback(false);
     textRef.current = "";
     if (onTextChange) onTextChange("");
     if (apiRef.current) {
@@ -44,7 +57,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
       const appState = apiRef.current.getAppState();
       apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0, zoom: { value: 1 } } });
     }
-  }, [imageUrl]);
+  }, [imageUrl, onTextChange]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -78,73 +91,80 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
 
   const emit = async () => {
     if (!apiRef.current || !imageRef.current) return;
-    const api = apiRef.current;
-    const img = imageRef.current;
-    if (!img.complete) {
-      await new Promise((resolve) => {
-        img.onload = resolve;
-        img.onerror = resolve;
+    try {
+      const api = apiRef.current;
+      const img = imageRef.current;
+      if (!img.complete) {
+        await new Promise((resolve) => {
+          img.onload = resolve;
+          img.onerror = resolve;
+        });
+      }
+
+      const elements = api.getSceneElements();
+      const files = api.getFiles();
+      const appState = api.getAppState();
+      const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+      const outWidth = Math.max(1, Math.round(img.naturalWidth || img.width || wrapperRect?.width || 1));
+      const outHeight = Math.max(1, Math.round(img.naturalHeight || img.height || wrapperRect?.height || 1));
+
+      const { exportToCanvas, convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+      const exportBounds = convertToExcalidrawElements([
+        {
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: outWidth,
+          height: outHeight,
+          strokeColor: "transparent",
+          backgroundColor: "transparent",
+          fillStyle: "solid",
+          strokeWidth: 1,
+          roughness: 0,
+          opacity: 0,
+        },
+      ]);
+      const drawingCanvas = await exportToCanvas({
+        elements: [...elements, ...exportBounds],
+        files,
+        appState: {
+          ...appState,
+          exportBackground: false,
+          viewBackgroundColor: "transparent",
+          zoom: { value: 1 },
+        },
+        exportPadding: 0,
+        getDimensions: () => ({
+          width: outWidth,
+          height: outHeight,
+          scale: 1,
+        }),
       });
+
+      const out = document.createElement("canvas");
+      out.width = outWidth;
+      out.height = outHeight;
+      const ctx = out.getContext("2d");
+      if (!ctx) return;
+      if (img.width > 0 && img.height > 0) {
+        ctx.drawImage(img, 0, 0, out.width, out.height);
+      }
+      if (drawingCanvas.width > 0 && drawingCanvas.height > 0) {
+        ctx.drawImage(drawingCanvas, 0, 0, out.width, out.height);
+      }
+      const dataUrl = out.toDataURL("image/png");
+      onChange?.(dataUrl);
+    } catch (err) {
+      console.warn("lesson overlay export skipped", err);
     }
-
-    const elements = api.getSceneElements();
-    const files = api.getFiles();
-    const appState = api.getAppState();
-    const outWidth = img.naturalWidth || img.width || 1;
-    const outHeight = img.naturalHeight || img.height || 1;
-
-    const { exportToCanvas, convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
-    const exportBounds = convertToExcalidrawElements([
-      {
-        type: "rectangle",
-        x: 0,
-        y: 0,
-        width: outWidth,
-        height: outHeight,
-        strokeColor: "transparent",
-        backgroundColor: "transparent",
-        fillStyle: "solid",
-        strokeWidth: 1,
-        roughness: 0,
-        opacity: 0,
-      },
-    ]);
-    const drawingCanvas = await exportToCanvas({
-      elements: [...elements, ...exportBounds],
-      files,
-      appState: {
-        ...appState,
-        exportBackground: false,
-        viewBackgroundColor: "transparent",
-        zoom: { value: 1 },
-      },
-      exportPadding: 0,
-      getDimensions: () => ({
-        width: outWidth,
-        height: outHeight,
-        scale: 1,
-      }),
-    });
-
-    const out = document.createElement("canvas");
-    out.width = outWidth;
-    out.height = outHeight;
-    const ctx = out.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(img, 0, 0, out.width, out.height);
-    if (drawingCanvas.width > 0 && drawingCanvas.height > 0) {
-      ctx.drawImage(drawingCanvas, 0, 0, out.width, out.height);
-    }
-    const dataUrl = out.toDataURL("image/png");
-    onChange?.(dataUrl);
   };
 
   const handleChange = () => {
     if (onTextChange && apiRef.current) {
-      const elements = apiRef.current.getSceneElements();
+      const elements = apiRef.current.getSceneElements() as SceneTextElement[];
       const text = elements
-        .filter((el: any) => el?.type === "text" && typeof el?.text === "string")
-        .map((el: any) => el.text.trim())
+        .filter((el) => el?.type === "text" && typeof el?.text === "string")
+        .map((el) => (el.text || "").trim())
         .filter(Boolean)
         .join("\n");
       if (text !== textRef.current) {
@@ -165,19 +185,28 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
     if (!apiRef.current || !mountedRef.current) return;
     const appState = apiRef.current.getAppState();
     apiRef.current.updateScene({
-      appState: { ...appState, scrollX: 0, scrollY: 0, zoom: { value: 1 } },
+      appState: {
+        ...appState,
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: 1 },
+        zenModeEnabled: false,
+      },
     });
   };
 
   useEffect(() => {
-    if (!imageLoaded || !apiRef.current) return;
+    if (!apiRef.current) return;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => resetViewport());
     });
   }, [imageLoaded, imageUrl]);
 
   return (
-    <div ref={wrapperRef} className="relative w-full rounded-xl border border-zinc-200 bg-zinc-50 overflow-visible">
+    <div
+      ref={wrapperRef}
+      className="relative w-full rounded-xl border border-zinc-200 bg-zinc-50 overflow-visible min-h-[480px]"
+    >
       <img
         ref={imageRef}
         src={backgroundUrl}
@@ -188,46 +217,51 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
           resetViewport();
         }}
         onError={() => {
+          const plainCandidate = toPlainSlideUrl(backgroundUrl);
+          if (!attemptedPlainFallback && plainCandidate !== backgroundUrl) {
+            setAttemptedPlainFallback(true);
+            setBackgroundUrl(plainCandidate);
+            return;
+          }
           setBackgroundUrl(fallbackBackground);
           setImageLoaded(true);
         }}
       />
-      {imageLoaded && (
-        <div
-          className="absolute left-0 top-0 excalidraw-transparent z-10"
-          style={{ width: "100%", height: "100%", pointerEvents: "auto" }}
-        >
-          <Excalidraw
-            excalidrawAPI={(api) => {
-              apiRef.current = api;
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => resetViewport());
-              });
-            }}
-            onChange={handleChange}
-            detectScroll={false}
-            handleKeyboardGlobally={false}
-            viewModeEnabled={false}
-            theme="light"
-            initialData={{
-              elements: [],
-              files: {},
-              appState: {
-                zenModeEnabled: false,
-                viewBackgroundColor: "transparent",
-                gridSize: null,
-                scrollX: 0,
-                scrollY: 0,
-                zoom: { value: 1 },
-                activeTool: { type: "selection" },
-              },
-            }}
-            UIOptions={{
-              canvasActions: { saveToActiveFile: false, loadScene: false, export: false, saveAsImage: false },
-            }}
-          />
-        </div>
-      )}
+      <div
+        className="absolute left-0 top-0 excalidraw-transparent z-10"
+        style={{ width: "100%", height: "100%", pointerEvents: "auto" }}
+      >
+        <Excalidraw
+          excalidrawAPI={(api) => {
+            apiRef.current = api;
+            if (!api) return;
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => resetViewport());
+            });
+          }}
+          onChange={handleChange}
+          detectScroll={false}
+          handleKeyboardGlobally={false}
+          viewModeEnabled={false}
+          theme="light"
+          initialData={{
+            elements: [],
+            files: {},
+            appState: {
+              zenModeEnabled: false,
+              viewBackgroundColor: "transparent",
+              gridSize: null,
+              scrollX: 0,
+              scrollY: 0,
+              zoom: { value: 1 },
+              activeTool: { type: "selection" },
+            },
+          }}
+          UIOptions={{
+            canvasActions: { saveToActiveFile: false, loadScene: false, export: false, saveAsImage: false },
+          }}
+        />
+      </div>
     </div>
   );
 }
