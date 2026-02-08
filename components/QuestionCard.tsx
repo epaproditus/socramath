@@ -141,9 +141,18 @@ export const QuestionCard = ({ args }: { args?: any }) => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ rubric }),
         })
-            .then((res) => res.json())
+            .then(async (res) => {
+                if (!res.ok) return null;
+                const text = await res.text();
+                if (!text) return null;
+                try {
+                    return JSON.parse(text);
+                } catch {
+                    return null;
+                }
+            })
             .then((data) => {
-                if (Array.isArray(data.goals)) {
+                if (data && Array.isArray(data.goals)) {
                     setStudentGoals(questionId, data.goals);
                 }
             })
