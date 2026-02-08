@@ -344,25 +344,6 @@ export default function LessonSessionDashboard() {
                   Slide {currentSlideIndex} of {slideCount}
                 </div>
                 <div className="flex items-center gap-2">
-                  {!slideDetail?.responseConfig?.scratch ? (
-                    <button
-                      onClick={async () => {
-                        if (!slideDetail?.id) return;
-                        await fetch("/api/lesson-slide", {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            slideId: slideDetail.id,
-                            responseConfig: { scratch: true },
-                          }),
-                        });
-                        await loadData();
-                      }}
-                      className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
-                    >
-                      Edit this slide
-                    </button>
-                  ) : null}
                   {slideCount > 1 && (
                     <button
                       onClick={deleteScratchSlide}
@@ -388,38 +369,20 @@ export default function LessonSessionDashboard() {
 
               {data.lesson.id ? (
                 <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50">
-                  {slideDetail?.responseConfig?.scratch ? (
-                    <LessonExcalidrawOverlay
-                      ref={overlayRef}
-                      imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
-                        currentSlideCacheKey
-                      )}`}
-                      onTextChange={handleScratchTextChange}
-                      onOcrText={handleScratchTextChange}
-                      sceneData={(slideDetail.responseConfig?.sceneData || undefined) as {
-                        elements?: unknown[];
-                        files?: Record<string, unknown>;
-                        appState?: Record<string, unknown>;
-                      }}
-                      onSceneChange={handleSceneChange}
-                    />
-                  ) : (
-                    <img
-                      src={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
-                        currentSlideCacheKey
-                      )}`}
-                      alt={`Slide ${currentSlideIndex}`}
-                      className="h-auto w-full object-contain bg-white"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        if (target.dataset.fallbackApplied === "1") return;
-                        target.dataset.fallbackApplied = "1";
-                        target.src = `/uploads/lessons/${data.lesson.id}/slides/${currentSlideIndex}.png?v=${encodeURIComponent(
-                          currentSlideCacheKey
-                        )}`;
-                      }}
-                    />
-                  )}
+                  <LessonExcalidrawOverlay
+                    ref={overlayRef}
+                    imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
+                      currentSlideCacheKey
+                    )}`}
+                    onTextChange={handleScratchTextChange}
+                    onOcrText={handleScratchTextChange}
+                    sceneData={(slideDetail?.responseConfig?.sceneData || undefined) as {
+                      elements?: unknown[];
+                      files?: Record<string, unknown>;
+                      appState?: Record<string, unknown>;
+                    }}
+                    onSceneChange={handleSceneChange}
+                  />
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-sm text-zinc-500">
