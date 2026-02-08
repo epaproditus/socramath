@@ -76,9 +76,18 @@ export default function LessonSessionDashboard() {
 
   useEffect(() => {
     const loadSlide = async () => {
-      if (!currentSlideId) return;
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (scratchTextTimerRef.current) clearTimeout(scratchTextTimerRef.current);
+      if (!currentSlideId) {
+        setSlideDetail(null);
+        return;
+      }
+      setSlideDetail(null);
       const res = await fetch(`/api/lesson-slide?slideId=${currentSlideId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        setSlideDetail(null);
+        return;
+      }
       const json = await res.json();
       setSlideDetail({
         ...json,
@@ -113,7 +122,7 @@ export default function LessonSessionDashboard() {
     if (!slideDetail) return;
     setSlideSaving(true);
     setSlideMessage(null);
-    await fetch("/api/lesson-slide", {
+    const res = await fetch("/api/lesson-slide", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -122,6 +131,12 @@ export default function LessonSessionDashboard() {
         rubric: slideDetail.rubric,
       }),
     });
+    if (!res.ok) {
+      setSlideSaving(false);
+      setSlideMessage("Slide changed, reloading...");
+      await loadData();
+      return;
+    }
     setSlideSaving(false);
     setSlideMessage("Saved.");
     setTimeout(() => setSlideMessage(null), 1200);
@@ -172,10 +187,14 @@ export default function LessonSessionDashboard() {
   const deleteScratchSlide = async () => {
     if (!slideDetail?.id || !data?.session.id) return;
     if (!confirm("Delete this scratch slide?")) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    if (scratchTextTimerRef.current) clearTimeout(scratchTextTimerRef.current);
+    const deletingId = slideDetail.id;
+    setSlideDetail(null);
     await fetch("/api/lesson-slide", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slideId: slideDetail.id }),
+      body: JSON.stringify({ slideId: deletingId }),
     });
     const nextIndex = Math.max(1, Math.min(currentSlideIndex, slideCount - 1));
     await updateSession({ currentSlideIndex: nextIndex });
@@ -183,22 +202,29 @@ export default function LessonSessionDashboard() {
 
   const handleScratchImageChange = async (dataUrl: string) => {
     if (!slideDetail?.id) return;
-    await fetch("/api/lesson-slide", {
+    const res = await fetch("/api/lesson-slide", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slideId: slideDetail.id, imageDataUrl: dataUrl }),
     });
+    if (res.status === 404) {
+      await loadData();
+    }
   };
 
   const handleScratchTextChange = (text: string) => {
     if (!slideDetail?.id) return;
+    const targetSlideId = slideDetail.id;
     if (scratchTextTimerRef.current) clearTimeout(scratchTextTimerRef.current);
     scratchTextTimerRef.current = setTimeout(async () => {
-      await fetch("/api/lesson-slide", {
+      const res = await fetch("/api/lesson-slide", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slideId: slideDetail.id, text }),
+        body: JSON.stringify({ slideId: targetSlideId, text }),
       });
+      if (res.status === 404) {
+        await loadData();
+      }
     }, 700);
   };
 

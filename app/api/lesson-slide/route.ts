@@ -120,31 +120,46 @@ export async function PATCH(req: Request) {
     : undefined;
   const text = typeof body?.text === "string" ? body.text : undefined;
   const imageDataUrl = typeof body?.imageDataUrl === "string" ? body.imageDataUrl : undefined;
-
-  if (imageDataUrl) {
-    const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
-    if (slide) {
-      const lesson = await prisma.lesson.findUnique({ where: { id: slide.lessonId } });
-      if (lesson) {
-        const slidesDir = path.join(process.cwd(), "public", "uploads", "lessons", lesson.id, "slides");
-        await mkdir(slidesDir, { recursive: true });
-        const base64 = imageDataUrl.split(",")[1] || "";
-        const buffer = Buffer.from(base64, "base64");
-        await writeFile(path.join(slidesDir, `${slide.index}.png`), buffer);
-      }
-    }
+  const existingSlide = await prisma.lessonSlide.findUnique({
+    where: { id: slideId },
+    select: { id: true, lessonId: true, index: true },
+  });
+  if (!existingSlide) {
+    return new Response("Slide not found", { status: 404 });
   }
 
-  await prisma.lessonSlide.update({
-    where: { id: slideId },
-    data: {
-      prompt,
-      rubric: rubric ? JSON.stringify(rubric) : undefined,
-      responseType,
-      responseConfig: responseConfig ? JSON.stringify(responseConfig) : undefined,
-      text,
-    },
-  });
+  if (imageDataUrl) {
+    const slidesDir = path.join(
+      process.cwd(),
+      "public",
+      "uploads",
+      "lessons",
+      existingSlide.lessonId,
+      "slides"
+    );
+    await mkdir(slidesDir, { recursive: true });
+    const base64 = imageDataUrl.split(",")[1] || "";
+    const buffer = Buffer.from(base64, "base64");
+    await writeFile(path.join(slidesDir, `${existingSlide.index}.png`), buffer);
+  }
+
+  try {
+    await prisma.lessonSlide.update({
+      where: { id: slideId },
+      data: {
+        prompt,
+        rubric: rubric ? JSON.stringify(rubric) : undefined,
+        responseType,
+        responseConfig: responseConfig ? JSON.stringify(responseConfig) : undefined,
+        text,
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === "P2025") {
+      return new Response("Slide not found", { status: 404 });
+    }
+    throw err;
+  }
 
   return new Response("OK");
 }
