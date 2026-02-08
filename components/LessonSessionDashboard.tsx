@@ -101,6 +101,8 @@ export default function LessonSessionDashboard() {
         id: json.id,
         prompt: json.prompt || "",
         rubric: rubricHtml,
+        responseType: json.responseType || "text",
+        responseConfig: json.responseConfig || {},
       });
       hydratedRef.current = true;
     };
@@ -133,6 +135,8 @@ export default function LessonSessionDashboard() {
         slideId: slideDetail.id,
         prompt: slideDetail.prompt,
         rubric: slideDetail.rubric,
+        responseType: slideDetail.responseType,
+        responseConfig: slideDetail.responseConfig,
       }),
     });
     if (!res.ok) {
@@ -148,6 +152,8 @@ export default function LessonSessionDashboard() {
       id: slideDetail.id,
       prompt: slideDetail.prompt || "",
       rubric: Array.isArray(slideDetail.rubric) ? slideDetail.rubric.join("\n") : "",
+      responseType: slideDetail.responseType || "text",
+      responseConfig: slideDetail.responseConfig || {},
     });
   };
 
@@ -162,6 +168,8 @@ export default function LessonSessionDashboard() {
         id: slideDetail.id,
         prompt: slideDetail.prompt || "",
         rubric: Array.isArray(slideDetail.rubric) ? slideDetail.rubric.join("\n") : "",
+        responseType: slideDetail.responseType || "text",
+        responseConfig: slideDetail.responseConfig || {},
       });
       if (snapshot !== lastSavedRef.current) {
         saveSlideDetail();
@@ -441,6 +449,64 @@ export default function LessonSessionDashboard() {
                     }}
                   />
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                    Response Type
+                  </label>
+                  <select
+                    value={slideDetail.responseType || "text"}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      const baseConfig = slideDetail.responseConfig || {};
+                      const nextConfig =
+                        next === "choice" || next === "multi"
+                          ? { ...baseConfig, widgets: ["choice"], multi: next === "multi" }
+                          : { ...baseConfig };
+                      setSlideDetail({
+                        ...slideDetail,
+                        responseType: next,
+                        responseConfig: nextConfig,
+                      });
+                      scheduleAutosave();
+                    }}
+                    className="w-full rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm"
+                  >
+                    <option value="text">Text</option>
+                    <option value="drawing">Drawing</option>
+                    <option value="both">Text + Drawing</option>
+                    <option value="choice">Multiple Choice (single)</option>
+                    <option value="multi">Multiple Choice (multi)</option>
+                  </select>
+                </div>
+                {(slideDetail.responseType === "choice" || slideDetail.responseType === "multi") && (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
+                      Choices (one per line)
+                    </label>
+                    <textarea
+                      value={(slideDetail.responseConfig?.choices || []).join("\n")}
+                      onChange={(e) => {
+                        const choices = e.target.value
+                          .split("\n")
+                          .map((line) => line.trim())
+                          .filter(Boolean);
+                        const nextConfig = {
+                          ...(slideDetail.responseConfig || {}),
+                          widgets: ["choice"],
+                          multi: slideDetail.responseType === "multi",
+                          choices,
+                        };
+                        setSlideDetail({
+                          ...slideDetail,
+                          responseConfig: nextConfig,
+                        });
+                        scheduleAutosave();
+                      }}
+                      className="h-28 w-full rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-zinc-400"
+                      placeholder={"A\nB\nC\nD"}
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
                     Rubric (one per line)

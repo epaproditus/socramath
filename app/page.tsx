@@ -9,6 +9,7 @@ import { useRef, useEffect, useState } from "react";
 import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 import LessonStage from "@/components/LessonStage";
+import LessonChoiceWidget from "@/components/LessonChoiceWidget";
 
 type LessonState = {
   lesson: {
@@ -58,6 +59,9 @@ export default function Home() {
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonDrawingTextBySlide, setLessonDrawingTextBySlide] = useState<Record<string, string>>({});
+  const [lessonResponseText, setLessonResponseText] = useState("");
+  const [lessonResponseSaving, setLessonResponseSaving] = useState(false);
+  const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initialize();
@@ -126,6 +130,28 @@ export default function Home() {
     }
   };
 
+  const loadLessonResponse = async (sessionId: string, slideId: string) => {
+    const res = await fetch(
+      `/api/lesson-response?sessionId=${encodeURIComponent(sessionId)}&slideId=${encodeURIComponent(slideId)}&me=1`
+    );
+    if (!res.ok) {
+      setLessonResponseText("");
+      return;
+    }
+    const json = await res.json();
+    setLessonResponseText(json.response || "");
+  };
+
+  const saveLessonResponse = async (sessionId: string, slideId: string, responseType: string) => {
+    setLessonResponseSaving(true);
+    await fetch("/api/lesson-response", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, slideId, response: lessonResponseText, responseType }),
+    }).catch(() => {});
+    setLessonResponseSaving(false);
+  };
+
   const handleLessonSlideChange = async (nextIndex: number) => {
     if (!lessonState) return;
     const max = lessonState.lesson.pageCount || lessonState.slides.length || 1;
@@ -162,6 +188,33 @@ export default function Home() {
   useEffect(() => {
     loadLessonState(true);
   }, []);
+
+  useEffect(() => {
+    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
+    loadLessonResponse(lessonState.session.id, lessonState.currentSlideId);
+  }, [lessonState?.session.id, lessonState?.currentSlideId]);
+
+  useEffect(() => {
+    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
+    const responseType = lessonState.slideResponseType || "text";
+    const widgets = lessonState.slideResponseConfig?.widgets || (
+      responseType === "both" ? ["text", "drawing"] : [responseType]
+    );
+    if (!widgets.includes("choice")) return;
+    if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
+    lessonResponseTimerRef.current = setTimeout(() => {
+      saveLessonResponse(lessonState.session.id, lessonState.currentSlideId!, responseType);
+    }, 700);
+    return () => {
+      if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
+    };
+  }, [
+    lessonResponseText,
+    lessonState?.session.id,
+    lessonState?.currentSlideId,
+    lessonState?.slideResponseType,
+    lessonState?.slideResponseConfig,
+  ]);
 
   useEffect(() => {
     if (!lessonState || activeExperienceRef.current !== "lesson") return;
@@ -855,7 +908,40 @@ export default function Home() {
                       </div>
                       <div className="mt-2 flex-1 min-h-0">
                         <div className={lessonTab === "chat" ? "h-full" : "hidden"}>
-                          <Thread />
+                          <div className="flex h-full flex-col gap-2">
+                            {lessonState &&
+                              (() => {
+                                const responseType = lessonState.slideResponseType || "text";
+                                const widgets = lessonState.slideResponseConfig?.widgets || (
+                                  responseType === "both"
+                                    ? ["text", "drawing"]
+                                    : [responseType || "text"]
+                                );
+                                if (!widgets.includes("choice")) return null;
+                                const choices = lessonState.slideResponseConfig?.choices || [];
+                                const multi = !!lessonState.slideResponseConfig?.multi;
+                                if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
+                                return (
+                                  <LessonChoiceWidget
+                                    choices={choices}
+                                    multi={multi}
+                                    value={lessonResponseText}
+                                    saving={lessonResponseSaving}
+                                    onChange={setLessonResponseText}
+                                    onSubmit={() =>
+                                      saveLessonResponse(
+                                        lessonState.session.id,
+                                        lessonState.currentSlideId!,
+                                        responseType
+                                      )
+                                    }
+                                  />
+                                );
+                              })()}
+                            <div className="flex-1 min-h-0">
+                              <Thread />
+                            </div>
+                          </div>
                         </div>
                         <div
                           className={

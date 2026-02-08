@@ -86,6 +86,17 @@ export async function POST(req: Request) {
             where: { lessonId: activeLesson.id, index: currentIndex },
           });
           slideContext = slide?.text || "";
+          if (slide?.responseConfig) {
+            try {
+              const config = JSON.parse(slide.responseConfig);
+              if (Array.isArray(config?.choices) && config.choices.length) {
+                const choiceLabel = config.multi ? "CHOICES (multi-select)" : "CHOICES";
+                slideContext += `\n\n${choiceLabel}:\n- ${config.choices.join("\n- ")}`;
+              }
+            } catch {
+              // ignore invalid JSON
+            }
+          }
         }
       }
     }
