@@ -485,7 +485,7 @@ export default function LessonSessionDashboard() {
                     </label>
                     <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
                       {(slideDetail.responseConfig?.choices || []).map((choice: string, idx: number) => (
-                        <div key={`${choice}-${idx}`} className="flex items-center gap-2">
+                        <div key={`choice-${idx}`} className="flex items-center gap-2">
                           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold">
                             {String.fromCharCode(65 + idx)}
                           </span>
