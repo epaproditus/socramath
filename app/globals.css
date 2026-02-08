@@ -1,45 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "./styles/excalidraw.css";
+@import "tldraw/tldraw.css";
 
-/* Excalidraw overlay should be transparent over slides */
-.excalidraw-transparent .App,
-.excalidraw-transparent .layer-ui__wrapper,
-.excalidraw-transparent .excalidraw-container {
-  background: transparent !important;
-}
-
-/* Hide Excalidraw usage hints over slides */
-.excalidraw-transparent .HintViewer {
+/* Keep tldraw canvas transparent over slide images */
+.tldraw-transparent .tl-background {
   display: none !important;
-}
-
-/* Strip extra Excalidraw chrome for lesson overlay (keep main toolbar) */
-.excalidraw-transparent .App-menu_right {
-  display: none !important;
-}
-
-/* Minimal toolbar: hide extra tools + lock/undo/redo/zoom */
-.excalidraw-transparent .App-toolbar__extra-tools-trigger,
-.excalidraw-transparent [data-testid="toolbar-lock"],
-.excalidraw-transparent .undo-redo-buttons,
-.excalidraw-transparent .zoom-actions,
-.excalidraw-transparent .main-menu-trigger,
-.excalidraw-transparent .library-button,
-.excalidraw-transparent .LibraryButton,
-.excalidraw-transparent .library-menu-trigger,
-.excalidraw-transparent [data-testid="library-button"],
-.excalidraw-transparent [data-testid*="library"],
-.excalidraw-transparent button[aria-label="Library"],
-.excalidraw-transparent [data-testid*="zen-mode"],
-.excalidraw-transparent button[aria-label*="Exit zen"],
-.excalidraw-transparent button[title*="Exit zen"] {
-  display: none !important;
-}
-
-/* Keep Excalidraw UI interactive */
-.excalidraw-transparent .App-menu_top {
-  pointer-events: auto !important;
 }
 
 .tiptap:empty::before,

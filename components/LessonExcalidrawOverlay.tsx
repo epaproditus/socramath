@@ -1,8 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types/types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "tldraw";
+import type { Editor, TLEditorSnapshot, TLShape } from "tldraw";
 
 type LessonExcalidrawOverlayProps = {
   imageUrl: string;
@@ -12,23 +13,59 @@ type LessonExcalidrawOverlayProps = {
     elements?: unknown[];
     files?: Record<string, unknown>;
     appState?: Record<string, unknown>;
+    snapshot?: Partial<TLEditorSnapshot>;
   };
   onSceneChange?: (sceneData: {
     elements: unknown[];
     files: Record<string, unknown>;
     appState: Record<string, unknown>;
+    snapshot: Partial<TLEditorSnapshot>;
   }) => void;
 };
 
-type SceneTextElement = {
-  type?: string;
-  text?: string;
-};
+const Tldraw = dynamic(() => import("tldraw").then((mod) => mod.Tldraw), { ssr: false });
 
-const Excalidraw = dynamic(
-  () => import("@excalidraw/excalidraw").then((mod) => mod.Excalidraw),
-  { ssr: false }
-);
+const uiComponents = {
+  MainMenu: null,
+  ContextMenu: null,
+  ActionsMenu: null,
+  HelpMenu: null,
+  ZoomMenu: null,
+  StylePanel: null,
+  PageMenu: null,
+  NavigationPanel: null,
+  Minimap: null,
+  QuickActions: null,
+  HelperButtons: null,
+  DebugMenu: null,
+  DebugPanel: null,
+  MenuPanel: null,
+  SharePanel: null,
+} as const;
+
+const fallbackBackground =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAt8B9o0F8YkAAAAASUVORK5CYII=";
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load image"));
+    image.src = src;
+  });
+}
+
+function extractTextFromShapes(shapes: TLShape[]) {
+  return shapes
+    .map((shape) => {
+      const props = (shape as { props?: Record<string, unknown> }).props;
+      if (!props) return "";
+      const text = props.text;
+      return typeof text === "string" ? text.trim() : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
 
 export default function LessonExcalidrawOverlay({
   imageUrl,
@@ -37,22 +74,21 @@ export default function LessonExcalidrawOverlay({
   sceneData,
   onSceneChange,
 }: LessonExcalidrawOverlayProps) {
-  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
-  const debounceRef = useRef<number | null>(null);
-  const textRef = useRef<string>("");
-  const onChangeRef = useRef(onChange);
-  const onTextChangeRef = useRef(onTextChange);
-  const onSceneChangeRef = useRef(onSceneChange);
+  const editorRef = useRef<Editor | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const hydratingRef = useRef(false);
+  const debounceRef = useRef<number | null>(null);
+  const textRef = useRef("");
+  const lastSceneSignatureRef = useRef("");
+  const onChangeRef = useRef(onChange);
+  const onTextChangeRef = useRef(onTextChange);
+  const onSceneChangeRef = useRef(onSceneChange);
   const [backgroundUrl, setBackgroundUrl] = useState(imageUrl);
   const [attemptedPlainFallback, setAttemptedPlainFallback] = useState(false);
-  const appliedSceneRef = useRef<string>("");
-  const lastEmittedSceneRef = useRef<string>("");
-  const fallbackBackground =
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAt8B9o0F8YkAAAAASUVORK5CYII=";
+
+  const editorKey = useMemo(() => imageUrl, [imageUrl]);
 
   const toPlainSlideUrl = (url: string) => {
     const [pathPart, queryPart] = url.split("?");
@@ -79,54 +115,12 @@ export default function LessonExcalidrawOverlay({
     onSceneChangeRef.current = onSceneChange;
   }, [onSceneChange]);
 
-  const sceneSignature = JSON.stringify(sceneData || {});
-
-  const applySceneToApi = (signature: string) => {
-    if (!apiRef.current) return;
-    if (appliedSceneRef.current === `${imageUrl}::${signature}`) return;
-    requestAnimationFrame(() => {
-      if (!mountedRef.current || !apiRef.current) return;
-      if (appliedSceneRef.current === `${imageUrl}::${signature}`) return;
-      const appState = apiRef.current.getAppState();
-      const mergedAppState = {
-        ...appState,
-        ...(sceneData?.appState || {}),
-        scrollX: 0,
-        scrollY: 0,
-        zoom: { value: 1 },
-        zenModeEnabled: false,
-        viewBackgroundColor: "transparent",
-      };
-      apiRef.current.updateScene({
-        elements: Array.isArray(sceneData?.elements) ? sceneData!.elements : [],
-        files:
-          sceneData?.files && typeof sceneData.files === "object"
-            ? (sceneData.files as Record<string, unknown>)
-            : {},
-        appState: mergedAppState,
-      });
-      appliedSceneRef.current = `${imageUrl}::${signature}`;
-    });
-  };
-
   useEffect(() => {
-    setImageLoaded(false);
     setBackgroundUrl(imageUrl);
     setAttemptedPlainFallback(false);
     textRef.current = "";
-    onTextChangeRef.current?.("");
-    if (apiRef.current) {
-      apiRef.current.updateScene({ elements: [] });
-      const appState = apiRef.current.getAppState();
-      apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0, zoom: { value: 1 } } });
-    }
-    appliedSceneRef.current = "";
-    lastEmittedSceneRef.current = "";
+    lastSceneSignatureRef.current = "";
   }, [imageUrl]);
-
-  useEffect(() => {
-    applySceneToApi(sceneSignature);
-  }, [sceneSignature, imageUrl]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -136,161 +130,78 @@ export default function LessonExcalidrawOverlay({
       if (!scroller) return;
       e.preventDefault();
       e.stopPropagation();
-      // ensure Excalidraw doesn't hijack wheel; scroll the page container instead
       scroller.scrollBy({ top: e.deltaY, left: e.deltaX, behavior: "auto" });
     };
     wrapper.addEventListener("wheel", handler, { passive: false, capture: true });
     return () => wrapper.removeEventListener("wheel", handler);
   }, []);
 
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    const scroller = wrapper?.closest("[data-lesson-scroll]") as HTMLElement | null;
-    if (!scroller) return;
-    const onScroll = () => {
-      if (apiRef.current) {
-        const appState = apiRef.current.getAppState();
-        apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0 } });
-      }
-      apiRef.current?.refresh();
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroller.removeEventListener("scroll", onScroll);
-  }, []);
+  const emitComposite = async () => {
+    if (!editorRef.current) return;
 
-  const emit = async () => {
-    if (!apiRef.current || !imageRef.current) return;
-    try {
-      const api = apiRef.current;
-      const img = imageRef.current;
-      if (!img.complete) {
-        await new Promise((resolve) => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        });
-      }
+    const img = imageRef.current;
+    const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+    const width = Math.max(1, Math.round(img?.naturalWidth || img?.width || wrapperRect?.width || 1280));
+    const height = Math.max(1, Math.round(img?.naturalHeight || img?.height || wrapperRect?.height || 720));
 
-      const elements = api.getSceneElements();
-      const files = api.getFiles();
-      const appState = api.getAppState();
-      const wrapperRect = wrapperRef.current?.getBoundingClientRect();
-      const outWidth = Math.max(1, Math.round(img.naturalWidth || img.width || wrapperRect?.width || 1));
-      const outHeight = Math.max(1, Math.round(img.naturalHeight || img.height || wrapperRect?.height || 1));
+    const out = document.createElement("canvas");
+    out.width = width;
+    out.height = height;
+    const ctx = out.getContext("2d");
+    if (!ctx) return;
 
-      const { exportToCanvas, convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
-      const exportBounds = convertToExcalidrawElements([
-        {
-          type: "rectangle",
-          x: 0,
-          y: 0,
-          width: outWidth,
-          height: outHeight,
-          strokeColor: "transparent",
-          backgroundColor: "transparent",
-          fillStyle: "solid",
-          strokeWidth: 1,
-          roughness: 0,
-          opacity: 0,
-        },
-      ]);
-      const drawingCanvas = await exportToCanvas({
-        elements: [...elements, ...exportBounds],
-        files,
-        appState: {
-          ...appState,
-          exportBackground: false,
-          viewBackgroundColor: "transparent",
-          zoom: { value: 1 },
-        },
-        exportPadding: 0,
-        getDimensions: () => ({
-          width: outWidth,
-          height: outHeight,
-          scale: 1,
-        }),
+    if (img && img.width > 0 && img.height > 0) {
+      ctx.drawImage(img, 0, 0, width, height);
+    }
+
+    const shapeIds = Array.from(editorRef.current.getCurrentPageShapeIds());
+    if (shapeIds.length > 0) {
+      const { url } = await editorRef.current.toImageDataUrl(shapeIds, {
+        format: "png",
+        background: false,
+        padding: 0,
+        pixelRatio: 1,
+        bounds: new Box(0, 0, width, height),
       });
-
-      const out = document.createElement("canvas");
-      out.width = outWidth;
-      out.height = outHeight;
-      const ctx = out.getContext("2d");
-      if (!ctx) return;
-      if (img.width > 0 && img.height > 0) {
-        ctx.drawImage(img, 0, 0, out.width, out.height);
-      }
-      if (drawingCanvas.width > 0 && drawingCanvas.height > 0) {
-        ctx.drawImage(drawingCanvas, 0, 0, out.width, out.height);
-      }
-      const dataUrl = out.toDataURL("image/png");
-      onChangeRef.current?.(dataUrl);
-    } catch (err) {
-      console.warn("lesson overlay export skipped", err);
+      const drawing = await loadImage(url);
+      ctx.drawImage(drawing, 0, 0, width, height);
     }
+
+    onChangeRef.current?.(out.toDataURL("image/png"));
   };
 
-  const handleChange = () => {
-    if (onTextChangeRef.current && apiRef.current) {
-      const elements = apiRef.current.getSceneElements() as SceneTextElement[];
-      const text = elements
-        .filter((el) => el?.type === "text" && typeof el?.text === "string")
-        .map((el) => (el.text || "").trim())
-        .filter(Boolean)
-        .join("\n");
-      if (text !== textRef.current) {
-        textRef.current = text;
-        onTextChangeRef.current(text);
-      }
+  const emitScene = () => {
+    if (!editorRef.current || !onSceneChangeRef.current) return;
+    const snapshot = editorRef.current.getSnapshot();
+    const payload = {
+      elements: [],
+      files: {},
+      appState: {},
+      snapshot,
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === lastSceneSignatureRef.current) return;
+    lastSceneSignatureRef.current = signature;
+    onSceneChangeRef.current(payload);
+  };
+
+  const handleMutation = () => {
+    if (!editorRef.current || hydratingRef.current) return;
+
+    const text = extractTextFromShapes(editorRef.current.getCurrentPageShapes());
+    if (text !== textRef.current) {
+      textRef.current = text;
+      onTextChangeRef.current?.(text);
     }
-    if (onSceneChangeRef.current && apiRef.current) {
-      const appState = apiRef.current.getAppState();
-      const scenePayload = {
-        elements: apiRef.current.getSceneElements() as unknown[],
-        files: apiRef.current.getFiles() as Record<string, unknown>,
-        appState: {
-          selectedElementIds: {},
-          activeTool: appState.activeTool,
-          editingElement: null,
-          viewModeEnabled: false,
-          theme: "light",
-          viewBackgroundColor: "transparent",
-        },
-      };
-      const signature = JSON.stringify(scenePayload);
-      if (signature !== lastEmittedSceneRef.current) {
-        lastEmittedSceneRef.current = signature;
-        appliedSceneRef.current = `${imageUrl}::${signature}`;
-        onSceneChangeRef.current(scenePayload);
-      }
-    }
+
+    emitScene();
+
     if (!onChangeRef.current) return;
-    if (debounceRef.current) {
-      window.clearTimeout(debounceRef.current);
-    }
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      emit();
-    }, 700);
+      void emitComposite();
+    }, 500);
   };
-
-  const resetViewport = () => {
-    if (!apiRef.current || !mountedRef.current) return;
-    const appState = apiRef.current.getAppState();
-    apiRef.current.updateScene({
-      appState: {
-        ...appState,
-        scrollX: 0,
-        scrollY: 0,
-        zoom: { value: 1 },
-        zenModeEnabled: false,
-      },
-    });
-  };
-
-  useEffect(() => {
-    if (!apiRef.current) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resetViewport());
-    });
-  }, [imageLoaded, imageUrl]);
 
   return (
     <div
@@ -302,10 +213,6 @@ export default function LessonExcalidrawOverlay({
         src={backgroundUrl}
         alt="Slide background"
         className="w-full h-auto block pointer-events-none"
-        onLoad={() => {
-          setImageLoaded(true);
-          resetViewport();
-        }}
         onError={() => {
           const plainCandidate = toPlainSlideUrl(backgroundUrl);
           if (!attemptedPlainFallback && plainCandidate !== backgroundUrl) {
@@ -314,42 +221,48 @@ export default function LessonExcalidrawOverlay({
             return;
           }
           setBackgroundUrl(fallbackBackground);
-          setImageLoaded(true);
         }}
       />
-      <div
-        className="absolute left-0 top-0 excalidraw-transparent z-10"
-        style={{ width: "100%", height: "100%", pointerEvents: "auto" }}
-      >
-        <Excalidraw
-          excalidrawAPI={(api) => {
-            apiRef.current = api;
-            if (!api) return;
-            requestAnimationFrame(() => applySceneToApi(sceneSignature));
+
+      <div className="absolute left-0 top-0 z-10 h-full w-full tldraw-transparent">
+        <Tldraw
+          key={editorKey}
+          autoFocus={false}
+          inferDarkMode={false}
+          hideUi={false}
+          cameraOptions={{ isLocked: true }}
+          components={uiComponents}
+          onMount={(editor) => {
+            editorRef.current = editor;
+
+            hydratingRef.current = true;
+            try {
+              const snapshot = sceneData?.snapshot;
+              if (snapshot) {
+                editor.loadSnapshot(snapshot);
+              }
+              editor.setCurrentTool("select");
+            } finally {
+              requestAnimationFrame(() => {
+                hydratingRef.current = false;
+              });
+            }
+
+            const removeStoreListener = editor.store.listen(
+              () => {
+                handleMutation();
+              },
+              { source: "user", scope: "document" }
+            );
+
             requestAnimationFrame(() => {
-              requestAnimationFrame(() => resetViewport());
+              if (!mountedRef.current) return;
+              handleMutation();
             });
-          }}
-          onChange={handleChange}
-          detectScroll={false}
-          handleKeyboardGlobally={false}
-          viewModeEnabled={false}
-          theme="light"
-          initialData={{
-            elements: [],
-            files: {},
-            appState: {
-              zenModeEnabled: false,
-              viewBackgroundColor: "transparent",
-              gridSize: null,
-              scrollX: 0,
-              scrollY: 0,
-              zoom: { value: 1 },
-              activeTool: { type: "selection" },
-            },
-          }}
-          UIOptions={{
-            canvasActions: { saveToActiveFile: false, loadScene: false, export: false, saveAsImage: false },
+
+            return () => {
+              removeStoreListener();
+            };
           }}
         />
       </div>
