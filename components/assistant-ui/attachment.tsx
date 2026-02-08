@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const useFileSrc = (file: File | undefined) => {
@@ -213,16 +214,17 @@ export const ComposerAttachments: FC = () => {
 export const ComposerAddAttachment: FC = () => {
   return (
     <ComposerPrimitive.AddAttachment asChild>
-      <TooltipIconButton
-        tooltip="Add Attachment"
-        side="bottom"
+      <Button
+        type="button"
         variant="ghost"
         size="icon"
         className="aui-composer-add-attachment size-8.5 rounded-full p-1 font-semibold text-xs hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30"
         aria-label="Add Attachment"
+        title="Add Attachment"
       >
         <PlusIcon className="aui-attachment-add-icon size-5 stroke-[1.5px]" />
-      </TooltipIconButton>
+        <span className="sr-only">Add Attachment</span>
+      </Button>
     </ComposerPrimitive.AddAttachment>
   );
 };
