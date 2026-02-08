@@ -99,16 +99,26 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
         ...appState,
         exportBackground: false,
         viewBackgroundColor: "transparent",
+        zoom: { value: 1 },
       },
+      exportPadding: 0,
     });
 
     const out = document.createElement("canvas");
-    out.width = drawingCanvas.width;
-    out.height = drawingCanvas.height;
+    out.width = img.naturalWidth || drawingCanvas.width;
+    out.height = img.naturalHeight || drawingCanvas.height;
     const ctx = out.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(img, 0, 0, out.width, out.height);
-    ctx.drawImage(drawingCanvas, 0, 0);
+    const scaleX = out.width / drawingCanvas.width;
+    const scaleY = out.height / drawingCanvas.height;
+    ctx.drawImage(
+      drawingCanvas,
+      0,
+      0,
+      drawingCanvas.width * scaleX,
+      drawingCanvas.height * scaleY
+    );
     const dataUrl = out.toDataURL("image/png");
     onChange?.(dataUrl);
   };
