@@ -22,7 +22,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -182,13 +181,17 @@ const AttachmentUI: FC = () => {
 const AttachmentRemove: FC = () => {
   return (
     <AttachmentPrimitive.Remove asChild>
-      <TooltipIconButton
-        tooltip="Remove file"
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
         className="aui-attachment-tile-remove absolute top-1.5 right-1.5 size-3.5 rounded-full bg-white text-muted-foreground opacity-100 shadow-sm hover:bg-white! [&_svg]:text-black hover:[&_svg]:text-destructive"
-        side="top"
+        aria-label="Remove file"
+        title="Remove file"
       >
         <XIcon className="aui-attachment-remove-icon size-3 dark:stroke-[2.5px]" />
-      </TooltipIconButton>
+        <span className="sr-only">Remove file</span>
+      </Button>
     </AttachmentPrimitive.Remove>
   );
 };
