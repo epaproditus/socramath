@@ -23,6 +23,9 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [backgroundUrl, setBackgroundUrl] = useState(imageUrl);
+  const fallbackBackground =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAt8B9o0F8YkAAAAASUVORK5CYII=";
 
   useEffect(() => {
     mountedRef.current = true;
@@ -33,6 +36,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
 
   useEffect(() => {
     setImageLoaded(false);
+    setBackgroundUrl(imageUrl);
     textRef.current = "";
     if (onTextChange) onTextChange("");
     if (apiRef.current) {
@@ -150,14 +154,17 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
     <div ref={wrapperRef} className="relative w-full rounded-xl border border-zinc-200 bg-zinc-50 overflow-visible">
       <img
         ref={imageRef}
-        src={imageUrl}
+        src={backgroundUrl}
         alt="Slide background"
         className="w-full h-auto block pointer-events-none"
         onLoad={() => {
           setImageLoaded(true);
           resetViewport();
         }}
-        onError={() => setImageLoaded(false)}
+        onError={() => {
+          setBackgroundUrl(fallbackBackground);
+          setImageLoaded(true);
+        }}
       />
       {imageLoaded && (
         <div
