@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 type LessonStageProps = {
   lessonId: string;
   slideFilename: string;
+  cacheKey?: string;
   currentSlideIndex: number;
   slideCount: number;
   sessionMode: "instructor" | "student";
@@ -18,6 +19,7 @@ type LessonStageProps = {
 export default function LessonStage({
   lessonId,
   slideFilename,
+  cacheKey,
   currentSlideIndex,
   slideCount,
   sessionMode,
@@ -26,7 +28,8 @@ export default function LessonStage({
   onDrawingChange,
   onDrawingTextChange,
 }: LessonStageProps) {
-  const slideImageUrl = `/uploads/lessons/${lessonId}/slides/${slideFilename}`;
+  const cacheParam = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
+  const slideImageUrl = `/uploads/lessons/${lessonId}/slides/${slideFilename}${cacheParam}`;
   return (
     <div
       className="flex h-full w-full items-start justify-center p-4 overflow-y-auto"
@@ -46,10 +49,9 @@ export default function LessonStage({
             className="w-full h-auto rounded-xl border border-zinc-200 object-contain bg-zinc-50"
             onError={(e) => {
               const target = e.currentTarget;
-              const fallback = `/uploads/lessons/${lessonId}/slides/${currentSlideIndex}.png`;
-              if (target.src.endsWith(slideFilename)) {
-                target.src = fallback;
-              }
+              if (target.dataset.fallbackApplied === "1") return;
+              target.dataset.fallbackApplied = "1";
+              target.src = `/uploads/lessons/${lessonId}/slides/${currentSlideIndex}.png${cacheParam}`;
             }}
           />
         )}

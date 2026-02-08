@@ -24,12 +24,13 @@ type LessonState = {
   };
   currentSlideIndex: number;
   currentSlideId: string | null;
+  currentSlideUpdatedAt?: string | null;
   slideText?: string;
   slidePrompt?: string;
   slideRubric?: string[];
   slideResponseType?: string;
   slideResponseConfig?: Record<string, any>;
-  slides: { id: string; index: number }[];
+  slides: { id: string; index: number; updatedAt?: string | Date }[];
 };
 
 export default function Home() {
@@ -768,10 +769,14 @@ export default function Home() {
                     const showDrawing = widgets.includes("drawing");
                     const digits = String(lessonState.lesson.pageCount || 1).length;
                     const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
+                    const slideCacheKey = lessonState.currentSlideId
+                      ? `${lessonState.currentSlideId}:${lessonState.currentSlideUpdatedAt || ""}`
+                      : `${lessonState.currentSlideIndex}`;
                       return (
                         <LessonStage
                           lessonId={lessonState.lesson.id}
                           slideFilename={slideFilename}
+                          cacheKey={slideCacheKey}
                           currentSlideIndex={lessonState.currentSlideIndex}
                           slideCount={lessonState.lesson.pageCount || lessonState.slides.length || 1}
                           sessionMode={lessonState.session.mode}

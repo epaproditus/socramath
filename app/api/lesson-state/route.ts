@@ -58,11 +58,34 @@ export async function GET() {
   const slides = await prisma.lessonSlide.findMany({
     where: { lessonId: lesson.id },
     orderBy: { index: "asc" },
-    select: { id: true, index: true },
+    select: { id: true, index: true, updatedAt: true },
   });
+  const maxSlideIndex = slides[slides.length - 1]?.index || 1;
+  if (currentSlideIndex > maxSlideIndex) {
+    currentSlideIndex = maxSlideIndex;
+    if (lessonSession.mode === "student") {
+      await prisma.lessonSessionState.update({
+        where: {
+          sessionId_userId: {
+            sessionId: lessonSession.id,
+            userId: session.user.id,
+          },
+        },
+        data: { currentSlideIndex },
+      }).catch(() => {});
+    } else {
+      await prisma.lessonSession.update({
+        where: { id: lessonSession.id },
+        data: { currentSlideIndex },
+      }).catch(() => {});
+    }
+  }
   const slide = await prisma.lessonSlide.findFirst({
     where: { lessonId: lesson.id, index: currentSlideIndex },
   });
+
+  const sessionCurrentSlideIndex =
+    lessonSession.mode === "student" ? lessonSession.currentSlideIndex : currentSlideIndex;
 
   return Response.json({
     lesson: {
@@ -75,7 +98,7 @@ export async function GET() {
     session: {
       id: lessonSession.id,
       mode: lessonSession.mode,
-      currentSlideIndex: lessonSession.currentSlideIndex,
+      currentSlideIndex: sessionCurrentSlideIndex,
     },
     currentSlideIndex,
     currentSlideId: slide?.id || null,
@@ -84,6 +107,7 @@ export async function GET() {
     slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
     slideResponseType: slide?.responseType || "text",
     slideResponseConfig: slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    currentSlideUpdatedAt: slide?.updatedAt || null,
     slides,
   });
 }

@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, MessageSquareText, Presentation } from "lucide-react";
 import { Assistant } from "@/app/assistant";
 
-type Slide = { id: string; index: number };
+type Slide = { id: string; index: number; updatedAt?: string | Date };
 type LessonState = {
   lesson: { id: string; title: string; pdfPath?: string | null; pageCount: number };
   session: { id: string; mode: "instructor" | "student"; currentSlideIndex: number };
   currentSlideIndex: number;
+  currentSlideUpdatedAt?: string | null;
   slides: Slide[];
 };
 
@@ -27,6 +28,11 @@ export default function LessonStudentView() {
     const slide = state?.slides.find((s) => s.index === currentSlideIndex);
     return slide?.id || null;
   }, [state?.slides, currentSlideIndex]);
+  const currentSlideCacheKey = useMemo(() => {
+    const slide = state?.slides.find((s) => s.index === currentSlideIndex);
+    if (!slide) return String(currentSlideIndex);
+    return `${slide.id}:${slide.updatedAt || state?.currentSlideUpdatedAt || ""}`;
+  }, [state?.slides, state?.currentSlideUpdatedAt, currentSlideIndex]);
 
   const slideFilename = useMemo(() => {
     const digits = String(slideCount).length;
@@ -178,15 +184,18 @@ export default function LessonStudentView() {
             <div className="flex-1 overflow-auto p-3">
               {state?.lesson.id ? (
                 <img
-                  src={`/uploads/lessons/${state.lesson.id}/slides/${slideFilename}`}
+                  src={`/uploads/lessons/${state.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
+                    currentSlideCacheKey
+                  )}`}
                   alt={`Slide ${currentSlideIndex}`}
                   className="h-[420px] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
                   onError={(e) => {
                     const target = e.currentTarget;
-                    const fallback = `/uploads/lessons/${state.lesson.id}/slides/${currentSlideIndex}.png`;
-                    if (target.src.endsWith(slideFilename)) {
-                      target.src = fallback;
-                    }
+                    if (target.dataset.fallbackApplied === "1") return;
+                    target.dataset.fallbackApplied = "1";
+                    target.src = `/uploads/lessons/${state.lesson.id}/slides/${currentSlideIndex}.png?v=${encodeURIComponent(
+                      currentSlideCacheKey
+                    )}`;
                   }}
                 />
               ) : (

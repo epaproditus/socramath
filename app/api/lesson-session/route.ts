@@ -43,7 +43,7 @@ export async function GET() {
   let slides = await prisma.lessonSlide.findMany({
     where: { lessonId: lesson.id },
     orderBy: { index: "asc" },
-    select: { id: true, index: true },
+    select: { id: true, index: true, updatedAt: true },
   });
   if (!slides.length && lesson.pageCount) {
     await prisma.$transaction(
@@ -60,7 +60,7 @@ export async function GET() {
     slides = await prisma.lessonSlide.findMany({
       where: { lessonId: lesson.id },
       orderBy: { index: "asc" },
-      select: { id: true, index: true },
+      select: { id: true, index: true, updatedAt: true },
     });
   }
 
