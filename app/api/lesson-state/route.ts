@@ -58,7 +58,7 @@ export async function GET() {
   const slides = await prisma.lessonSlide.findMany({
     where: { lessonId: lesson.id },
     orderBy: { index: "asc" },
-    select: { id: true, index: true, updatedAt: true },
+    select: { id: true, index: true },
   });
   const maxSlideIndex = slides[slides.length - 1]?.index || 1;
   if (currentSlideIndex > maxSlideIndex) {
@@ -84,9 +84,6 @@ export async function GET() {
     where: { lessonId: lesson.id, index: currentSlideIndex },
   });
 
-  const sessionCurrentSlideIndex =
-    lessonSession.mode === "student" ? lessonSession.currentSlideIndex : currentSlideIndex;
-
   return Response.json({
     lesson: {
       id: lesson.id,
@@ -98,7 +95,7 @@ export async function GET() {
     session: {
       id: lessonSession.id,
       mode: lessonSession.mode,
-      currentSlideIndex: sessionCurrentSlideIndex,
+      currentSlideIndex,
     },
     currentSlideIndex,
     currentSlideId: slide?.id || null,
@@ -107,7 +104,6 @@ export async function GET() {
     slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
     slideResponseType: slide?.responseType || "text",
     slideResponseConfig: slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
-    currentSlideUpdatedAt: slide?.updatedAt || null,
     slides,
   });
 }
@@ -118,7 +114,12 @@ export async function POST(req: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const body = await req.json();
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Invalid JSON body", { status: 400 });
+  }
   const sessionId = body?.sessionId as string | undefined;
   const currentSlideIndex = body?.currentSlideIndex as number | undefined;
   if (!sessionId || typeof currentSlideIndex !== "number") {
