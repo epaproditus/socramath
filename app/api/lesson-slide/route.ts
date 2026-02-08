@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
-import { mkdir, writeFile } from "fs/promises";
+import { access, mkdir, writeFile } from "fs/promises";
 import path from "path";
 
 
@@ -69,8 +69,28 @@ export async function POST(req: Request) {
 
   const slidesDir = path.join(process.cwd(), "public", "uploads", "lessons", lessonId, "slides");
   await mkdir(slidesDir, { recursive: true });
-  const { createCanvas } = await import("canvas");
-  const canvas = createCanvas(1280, 720);
+  const { createCanvas, loadImage } = await import("canvas");
+  let width = 1280;
+  let height = 720;
+  const digits = String(Math.max(lesson.pageCount, 1)).length;
+  const refCandidates = [
+    path.join(slidesDir, `${String(1).padStart(digits, "0")}.png`),
+    path.join(slidesDir, "1.png"),
+  ];
+  for (const candidate of refCandidates) {
+    try {
+      await access(candidate);
+      const img = await loadImage(candidate);
+      if (img.width && img.height) {
+        width = img.width;
+        height = img.height;
+        break;
+      }
+    } catch {
+      // ignore missing reference slide
+    }
+  }
+  const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
