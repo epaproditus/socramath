@@ -481,30 +481,121 @@ export default function LessonSessionDashboard() {
                 {(slideDetail.responseType === "choice" || slideDetail.responseType === "multi") && (
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase text-zinc-500">
-                      Choices (one per line)
+                      Multiple Choice
                     </label>
-                    <textarea
-                      value={(slideDetail.responseConfig?.choices || []).join("\n")}
-                      onChange={(e) => {
-                        const choices = e.target.value
-                          .split("\n")
-                          .map((line) => line.trim())
-                          .filter(Boolean);
-                        const nextConfig = {
-                          ...(slideDetail.responseConfig || {}),
-                          widgets: ["choice"],
-                          multi: slideDetail.responseType === "multi",
-                          choices,
-                        };
-                        setSlideDetail({
-                          ...slideDetail,
-                          responseConfig: nextConfig,
-                        });
-                        scheduleAutosave();
-                      }}
-                      className="h-28 w-full rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-zinc-400"
-                      placeholder={"A\nB\nC\nD"}
-                    />
+                    <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
+                      {(slideDetail.responseConfig?.choices || []).map((choice: string, idx: number) => (
+                        <div key={`${choice}-${idx}`} className="flex items-center gap-2">
+                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold">
+                            {String.fromCharCode(65 + idx)}
+                          </span>
+                          <input
+                            value={choice}
+                            onChange={(e) => {
+                              const choices = [...(slideDetail.responseConfig?.choices || [])];
+                              choices[idx] = e.target.value;
+                              const nextConfig = {
+                                ...(slideDetail.responseConfig || {}),
+                                widgets: ["choice"],
+                                multi: slideDetail.responseType === "multi",
+                                choices,
+                              };
+                              setSlideDetail({
+                                ...slideDetail,
+                                responseConfig: nextConfig,
+                              });
+                              scheduleAutosave();
+                            }}
+                            placeholder={`Choice ${idx + 1}`}
+                            className="flex-1 rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-zinc-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const choices = [...(slideDetail.responseConfig?.choices || [])];
+                              choices.splice(idx, 1);
+                              const nextConfig = {
+                                ...(slideDetail.responseConfig || {}),
+                                widgets: ["choice"],
+                                multi: slideDetail.responseType === "multi",
+                                choices,
+                              };
+                              setSlideDetail({
+                                ...slideDetail,
+                                responseConfig: nextConfig,
+                              });
+                              scheduleAutosave();
+                            }}
+                            className="rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const choices = [...(slideDetail.responseConfig?.choices || [])];
+                          choices.push("");
+                          const nextConfig = {
+                            ...(slideDetail.responseConfig || {}),
+                            widgets: ["choice"],
+                            multi: slideDetail.responseType === "multi",
+                            choices,
+                          };
+                          setSlideDetail({
+                            ...slideDetail,
+                            responseConfig: nextConfig,
+                          });
+                          scheduleAutosave();
+                        }}
+                        className="w-full rounded-md border border-dashed border-zinc-200 px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-50"
+                      >
+                        Add option
+                      </button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <label className="flex items-center gap-2 text-xs text-zinc-600">
+                        <input
+                          type="checkbox"
+                          checked={!!slideDetail.responseConfig?.explain}
+                          onChange={(e) => {
+                            const nextConfig = {
+                              ...(slideDetail.responseConfig || {}),
+                              widgets: ["choice"],
+                              multi: slideDetail.responseType === "multi",
+                              explain: e.target.checked,
+                            };
+                            setSlideDetail({
+                              ...slideDetail,
+                              responseConfig: nextConfig,
+                            });
+                            scheduleAutosave();
+                          }}
+                        />
+                        Ask student to explain their answer
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-zinc-600">
+                        <input
+                          type="checkbox"
+                          checked={!!slideDetail.responseConfig?.showClassmates}
+                          onChange={(e) => {
+                            const nextConfig = {
+                              ...(slideDetail.responseConfig || {}),
+                              widgets: ["choice"],
+                              multi: slideDetail.responseType === "multi",
+                              showClassmates: e.target.checked,
+                            };
+                            setSlideDetail({
+                              ...slideDetail,
+                              responseConfig: nextConfig,
+                            });
+                            scheduleAutosave();
+                          }}
+                        />
+                        Show students their classmates’ responses
+                      </label>
+                    </div>
                   </div>
                 )}
                 <div>

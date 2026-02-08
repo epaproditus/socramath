@@ -62,6 +62,8 @@ export default function Home() {
   const [lessonResponseText, setLessonResponseText] = useState("");
   const [lessonResponseSaving, setLessonResponseSaving] = useState(false);
   const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [lessonChoiceValue, setLessonChoiceValue] = useState("");
+  const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
 
   useEffect(() => {
     initialize();
@@ -136,18 +138,57 @@ export default function Home() {
     );
     if (!res.ok) {
       setLessonResponseText("");
+      setLessonChoiceValue("");
+      setLessonChoiceExplain("");
       return;
     }
     const json = await res.json();
-    setLessonResponseText(json.response || "");
+    const responseText = json.response || "";
+    setLessonResponseText(responseText);
+
+    const responseType = lessonStateRef.current?.slideResponseType || "text";
+    const widgets = lessonStateRef.current?.slideResponseConfig?.widgets || (
+      responseType === "both" ? ["text", "drawing"] : [responseType]
+    );
+    if (!widgets.includes("choice")) {
+      setLessonChoiceValue("");
+      setLessonChoiceExplain("");
+      return;
+    }
+    const explain = !!lessonStateRef.current?.slideResponseConfig?.explain;
+    if (explain) {
+      try {
+        const parsed = JSON.parse(responseText);
+        if (parsed && typeof parsed === "object") {
+          const selection = (parsed as any).selection ?? "";
+          const explainText = (parsed as any).explain ?? "";
+          if (Array.isArray(selection)) {
+            setLessonChoiceValue(JSON.stringify(selection));
+          } else {
+            setLessonChoiceValue(typeof selection === "string" ? selection : "");
+          }
+          setLessonChoiceExplain(typeof explainText === "string" ? explainText : "");
+          return;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    setLessonChoiceValue(responseText);
+    setLessonChoiceExplain("");
   };
 
-  const saveLessonResponse = async (sessionId: string, slideId: string, responseType: string) => {
+  const saveLessonResponse = async (
+    sessionId: string,
+    slideId: string,
+    responseType: string,
+    responseText: string
+  ) => {
     setLessonResponseSaving(true);
     await fetch("/api/lesson-response", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, slideId, response: lessonResponseText, responseType }),
+      body: JSON.stringify({ sessionId, slideId, response: responseText, responseType }),
     }).catch(() => {});
     setLessonResponseSaving(false);
   };
@@ -201,15 +242,34 @@ export default function Home() {
       responseType === "both" ? ["text", "drawing"] : [responseType]
     );
     if (!widgets.includes("choice")) return;
+    const explain = !!lessonState.slideResponseConfig?.explain;
+    const multi = !!lessonState.slideResponseConfig?.multi;
+    let payload = lessonChoiceValue;
+    if (explain) {
+      let selection: string | string[] = lessonChoiceValue;
+      if (multi) {
+        try {
+          const parsed = JSON.parse(lessonChoiceValue);
+          if (Array.isArray(parsed)) selection = parsed;
+        } catch {
+          selection = [];
+        }
+      }
+      payload = JSON.stringify({
+        selection,
+        explain: lessonChoiceExplain || "",
+      });
+    }
     if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
     lessonResponseTimerRef.current = setTimeout(() => {
-      saveLessonResponse(lessonState.session.id, lessonState.currentSlideId!, responseType);
+      saveLessonResponse(lessonState.session.id, lessonState.currentSlideId!, responseType, payload);
     }, 700);
     return () => {
       if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
     };
   }, [
-    lessonResponseText,
+    lessonChoiceValue,
+    lessonChoiceExplain,
     lessonState?.session.id,
     lessonState?.currentSlideId,
     lessonState?.slideResponseType,
@@ -920,19 +980,38 @@ export default function Home() {
                                 if (!widgets.includes("choice")) return null;
                                 const choices = lessonState.slideResponseConfig?.choices || [];
                                 const multi = !!lessonState.slideResponseConfig?.multi;
+                                const explain = !!lessonState.slideResponseConfig?.explain;
                                 if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
                                 return (
                                   <LessonChoiceWidget
                                     choices={choices}
                                     multi={multi}
-                                    value={lessonResponseText}
+                                    value={lessonChoiceValue}
+                                    explain={explain}
+                                    explainValue={lessonChoiceExplain}
+                                    onExplainChange={setLessonChoiceExplain}
                                     saving={lessonResponseSaving}
-                                    onChange={setLessonResponseText}
+                                    onChange={setLessonChoiceValue}
                                     onSubmit={() =>
                                       saveLessonResponse(
                                         lessonState.session.id,
                                         lessonState.currentSlideId!,
-                                        responseType
+                                        responseType,
+                                        explain
+                                          ? JSON.stringify({
+                                              selection: multi
+                                                ? (() => {
+                                                    try {
+                                                      const parsed = JSON.parse(lessonChoiceValue);
+                                                      return Array.isArray(parsed) ? parsed : [];
+                                                    } catch {
+                                                      return [];
+                                                    }
+                                                  })()
+                                                : lessonChoiceValue,
+                                              explain: lessonChoiceExplain || "",
+                                            })
+                                          : lessonChoiceValue
                                       )
                                     }
                                   />

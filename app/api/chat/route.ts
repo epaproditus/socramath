@@ -92,6 +92,9 @@ export async function POST(req: Request) {
               if (Array.isArray(config?.choices) && config.choices.length) {
                 const choiceLabel = config.multi ? "CHOICES (multi-select)" : "CHOICES";
                 slideContext += `\n\n${choiceLabel}:\n- ${config.choices.join("\n- ")}`;
+                if (config.explain) {
+                  slideContext += `\n\nNOTE: After selecting, ask the student to explain their answer.`;
+                }
               }
             } catch {
               // ignore invalid JSON
