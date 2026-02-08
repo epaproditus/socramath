@@ -90,10 +90,27 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
     const elements = api.getSceneElements();
     const files = api.getFiles();
     const appState = api.getAppState();
+    const outWidth = img.naturalWidth || img.width || 1;
+    const outHeight = img.naturalHeight || img.height || 1;
 
-    const { exportToCanvas } = await import("@excalidraw/excalidraw");
+    const { exportToCanvas, convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+    const exportBounds = convertToExcalidrawElements([
+      {
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: outWidth,
+        height: outHeight,
+        strokeColor: "transparent",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 1,
+        roughness: 0,
+        opacity: 0,
+      },
+    ]);
     const drawingCanvas = await exportToCanvas({
-      elements,
+      elements: [...elements, ...exportBounds],
       files,
       appState: {
         ...appState,
@@ -102,24 +119,21 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
         zoom: { value: 1 },
       },
       exportPadding: 0,
+      getDimensions: () => ({
+        width: outWidth,
+        height: outHeight,
+        scale: 1,
+      }),
     });
 
     const out = document.createElement("canvas");
-    out.width = img.naturalWidth || drawingCanvas.width || 1;
-    out.height = img.naturalHeight || drawingCanvas.height || 1;
+    out.width = outWidth;
+    out.height = outHeight;
     const ctx = out.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(img, 0, 0, out.width, out.height);
     if (drawingCanvas.width > 0 && drawingCanvas.height > 0) {
-      const scaleX = out.width / drawingCanvas.width;
-      const scaleY = out.height / drawingCanvas.height;
-      ctx.drawImage(
-        drawingCanvas,
-        0,
-        0,
-        drawingCanvas.width * scaleX,
-        drawingCanvas.height * scaleY
-      );
+      ctx.drawImage(drawingCanvas, 0, 0, out.width, out.height);
     }
     const dataUrl = out.toDataURL("image/png");
     onChange?.(dataUrl);

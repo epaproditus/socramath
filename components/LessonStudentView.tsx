@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, MessageSquareText, Presentation } from "lucide-react";
 import { Assistant } from "@/app/assistant";
 
-type Slide = { id: string; index: number; updatedAt?: string | Date };
+type Slide = { id: string; index: number };
 type LessonState = {
   lesson: { id: string; title: string; pdfPath?: string | null; pageCount: number };
   session: { id: string; mode: "instructor" | "student"; currentSlideIndex: number };
   currentSlideIndex: number;
-  currentSlideUpdatedAt?: string | null;
   slides: Slide[];
 };
 
@@ -31,8 +30,8 @@ export default function LessonStudentView() {
   const currentSlideCacheKey = useMemo(() => {
     const slide = state?.slides.find((s) => s.index === currentSlideIndex);
     if (!slide) return String(currentSlideIndex);
-    return `${slide.id}:${slide.updatedAt || state?.currentSlideUpdatedAt || ""}`;
-  }, [state?.slides, state?.currentSlideUpdatedAt, currentSlideIndex]);
+    return slide.id;
+  }, [state?.slides, currentSlideIndex]);
 
   const slideFilename = useMemo(() => {
     const digits = String(slideCount).length;

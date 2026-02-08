@@ -6,7 +6,7 @@ import Link from "next/link";
 import RichTextEditor from "@/components/RichTextEditor";
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 
-type Slide = { id: string; index: number; updatedAt?: string | Date };
+type Slide = { id: string; index: number };
 type LessonSessionPayload = {
   lesson: { id: string; title: string; pdfPath?: string | null; pageCount: number };
   session: { id: string; mode: "instructor" | "student"; currentSlideIndex: number };
@@ -45,7 +45,7 @@ export default function LessonSessionDashboard() {
   const currentSlideCacheKey = useMemo(() => {
     const slide = data?.slides.find((s) => s.index === currentSlideIndex);
     if (!slide) return String(currentSlideIndex);
-    return `${slide.id}:${slide.updatedAt || ""}`;
+    return slide.id;
   }, [data?.slides, currentSlideIndex]);
 
   const slideFilename = useMemo(() => {
@@ -260,7 +260,7 @@ export default function LessonSessionDashboard() {
                     <span className="mb-1 block text-[11px] text-zinc-500">#{slide.index}</span>
                     <img
                       src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}?v=${encodeURIComponent(
-                        `${slide.id}:${slide.updatedAt || ""}`
+                        slide.id
                       )}`}
                       alt={`Slide ${slide.index}`}
                       className="aspect-[3/4] w-full rounded-lg border border-zinc-200 object-contain bg-white"
@@ -269,7 +269,7 @@ export default function LessonSessionDashboard() {
                         if (target.dataset.fallbackApplied === "1") return;
                         target.dataset.fallbackApplied = "1";
                         target.src = `/uploads/lessons/${data.lesson.id}/slides/${slide.index}.png?v=${encodeURIComponent(
-                          `${slide.id}:${slide.updatedAt || ""}`
+                          slide.id
                         )}`;
                       }}
                     />

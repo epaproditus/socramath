@@ -24,13 +24,12 @@ type LessonState = {
   };
   currentSlideIndex: number;
   currentSlideId: string | null;
-  currentSlideUpdatedAt?: string | null;
   slideText?: string;
   slidePrompt?: string;
   slideRubric?: string[];
   slideResponseType?: string;
   slideResponseConfig?: Record<string, any>;
-  slides: { id: string; index: number; updatedAt?: string | Date }[];
+  slides: { id: string; index: number }[];
 };
 
 export default function Home() {
@@ -770,7 +769,7 @@ export default function Home() {
                     const digits = String(lessonState.lesson.pageCount || 1).length;
                     const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
                     const slideCacheKey = lessonState.currentSlideId
-                      ? `${lessonState.currentSlideId}:${lessonState.currentSlideUpdatedAt || ""}`
+                      ? lessonState.currentSlideId
                       : `${lessonState.currentSlideIndex}`;
                       return (
                         <LessonStage
