@@ -84,25 +84,29 @@ export default function LessonExcalidrawOverlay({
   const applySceneToApi = (signature: string) => {
     if (!apiRef.current) return;
     if (appliedSceneRef.current === `${imageUrl}::${signature}`) return;
-    const appState = apiRef.current.getAppState();
-    const mergedAppState = {
-      ...appState,
-      ...(sceneData?.appState || {}),
-      scrollX: 0,
-      scrollY: 0,
-      zoom: { value: 1 },
-      zenModeEnabled: false,
-      viewBackgroundColor: "transparent",
-    };
-    apiRef.current.updateScene({
-      elements: Array.isArray(sceneData?.elements) ? sceneData!.elements : [],
-      files:
-        sceneData?.files && typeof sceneData.files === "object"
-          ? (sceneData.files as Record<string, unknown>)
-          : {},
-      appState: mergedAppState,
+    requestAnimationFrame(() => {
+      if (!mountedRef.current || !apiRef.current) return;
+      if (appliedSceneRef.current === `${imageUrl}::${signature}`) return;
+      const appState = apiRef.current.getAppState();
+      const mergedAppState = {
+        ...appState,
+        ...(sceneData?.appState || {}),
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: 1 },
+        zenModeEnabled: false,
+        viewBackgroundColor: "transparent",
+      };
+      apiRef.current.updateScene({
+        elements: Array.isArray(sceneData?.elements) ? sceneData!.elements : [],
+        files:
+          sceneData?.files && typeof sceneData.files === "object"
+            ? (sceneData.files as Record<string, unknown>)
+            : {},
+        appState: mergedAppState,
+      });
+      appliedSceneRef.current = `${imageUrl}::${signature}`;
     });
-    appliedSceneRef.current = `${imageUrl}::${signature}`;
   };
 
   useEffect(() => {
@@ -320,7 +324,7 @@ export default function LessonExcalidrawOverlay({
           excalidrawAPI={(api) => {
             apiRef.current = api;
             if (!api) return;
-            applySceneToApi(sceneSignature);
+            requestAnimationFrame(() => applySceneToApi(sceneSignature));
             requestAnimationFrame(() => {
               requestAnimationFrame(() => resetViewport());
             });
