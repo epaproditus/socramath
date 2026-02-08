@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Box } from "tldraw";
 import type { Editor, TLEditorSnapshot, TLShape } from "tldraw";
 
@@ -9,6 +9,7 @@ type LessonExcalidrawOverlayProps = {
   imageUrl: string;
   onChange?: (dataUrl: string) => void;
   onTextChange?: (text: string) => void;
+  onOcrText?: (text: string) => void;
   sceneData?: {
     elements?: unknown[];
     files?: Record<string, unknown>;
@@ -98,13 +99,17 @@ function extractTextFromShapes(shapes: TLShape[]) {
   return Array.from(new Set(lines)).join("\n");
 }
 
-export default function LessonExcalidrawOverlay({
-  imageUrl,
-  onChange,
-  onTextChange,
-  sceneData,
-  onSceneChange,
-}: LessonExcalidrawOverlayProps) {
+const LessonExcalidrawOverlay = forwardRef(function LessonExcalidrawOverlay(
+  {
+    imageUrl,
+    onChange,
+    onTextChange,
+    onOcrText,
+    sceneData,
+    onSceneChange,
+  }: LessonExcalidrawOverlayProps,
+  ref
+) {
   const editorRef = useRef<Editor | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -115,9 +120,11 @@ export default function LessonExcalidrawOverlay({
   const lastSceneSignatureRef = useRef("");
   const onChangeRef = useRef(onChange);
   const onTextChangeRef = useRef(onTextChange);
+  const onOcrTextRef = useRef(onOcrText);
   const onSceneChangeRef = useRef(onSceneChange);
   const [backgroundUrl, setBackgroundUrl] = useState(imageUrl);
   const [attemptedPlainFallback, setAttemptedPlainFallback] = useState(false);
+  const ocrRunningRef = useRef(false);
 
   const editorKey = useMemo(() => imageUrl, [imageUrl]);
 
@@ -141,6 +148,10 @@ export default function LessonExcalidrawOverlay({
   useEffect(() => {
     onTextChangeRef.current = onTextChange;
   }, [onTextChange]);
+
+  useEffect(() => {
+    onOcrTextRef.current = onOcrText;
+  }, [onOcrText]);
 
   useEffect(() => {
     onSceneChangeRef.current = onSceneChange;
@@ -200,6 +211,48 @@ export default function LessonExcalidrawOverlay({
 
     onChangeRef.current?.(out.toDataURL("image/png"));
   };
+
+  const exportDrawingDataUrl = async () => {
+    if (!editorRef.current) return null;
+    const shapeIds = Array.from(editorRef.current.getCurrentPageShapeIds());
+    if (shapeIds.length === 0) return null;
+    const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+    const width = Math.max(1, Math.round(wrapperRect?.width || 1280));
+    const height = Math.max(1, Math.round(wrapperRect?.height || 720));
+    const { url } = await editorRef.current.toImageDataUrl(shapeIds, {
+      format: "png",
+      background: true,
+      padding: 0,
+      pixelRatio: 1,
+      bounds: new Box(0, 0, width, height),
+    });
+    return url;
+  };
+
+  const runOcr = async () => {
+    if (ocrRunningRef.current) return;
+    ocrRunningRef.current = true;
+    try {
+      const dataUrl = await exportDrawingDataUrl();
+      if (!dataUrl) {
+        onOcrTextRef.current?.("");
+        return;
+      }
+      const tesseract = await import("tesseract.js");
+      const worker = await tesseract.createWorker("eng");
+      try {
+        const { data } = await worker.recognize(dataUrl);
+        const text = (data?.text || "").trim();
+        onOcrTextRef.current?.(text);
+      } finally {
+        await worker.terminate();
+      }
+    } finally {
+      ocrRunningRef.current = false;
+    }
+  };
+
+  useImperativeHandle(ref, () => ({ runOcr }), []);
 
   const emitScene = () => {
     if (!editorRef.current || !onSceneChangeRef.current) return;
@@ -299,4 +352,6 @@ export default function LessonExcalidrawOverlay({
       </div>
     </div>
   );
-}
+});
+
+export default LessonExcalidrawOverlay;

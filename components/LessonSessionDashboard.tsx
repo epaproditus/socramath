@@ -35,6 +35,8 @@ export default function LessonSessionDashboard() {
   const hydratedRef = useRef(false);
   const scratchTextTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [creatingSlide, setCreatingSlide] = useState(false);
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const overlayRef = useRef<{ runOcr: () => Promise<void> } | null>(null);
 
   const currentSlideIndex = data?.session.currentSlideIndex || 1;
   const slideCount = data?.lesson.pageCount || data?.slides.length || 1;
@@ -240,6 +242,16 @@ export default function LessonSessionDashboard() {
     }, 700);
   };
 
+  const runOcrScan = async () => {
+    if (!overlayRef.current || ocrRunning) return;
+    setOcrRunning(true);
+    try {
+      await overlayRef.current.runOcr();
+    } finally {
+      setOcrRunning(false);
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-[1500px] p-3">
       <div className="mb-4 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
@@ -370,10 +382,12 @@ export default function LessonSessionDashboard() {
                 <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50">
                   {slideDetail?.responseConfig?.scratch ? (
                     <LessonExcalidrawOverlay
+                      ref={overlayRef}
                       imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
                         currentSlideCacheKey
                       )}`}
                       onTextChange={handleScratchTextChange}
+                      onOcrText={handleScratchTextChange}
                       sceneData={(slideDetail.responseConfig?.sceneData || undefined) as {
                         elements?: unknown[];
                         files?: Record<string, unknown>;
@@ -441,8 +455,16 @@ export default function LessonSessionDashboard() {
                     }}
                   />
                 </div>
-                <div className="text-xs text-zinc-500">
-                  {slideSaving ? "Saving..." : slideMessage || "Autosave on edit"}
+                <div className="flex items-center justify-between text-xs text-zinc-500">
+                  <span>{slideSaving ? "Saving..." : slideMessage || "Autosave on edit"}</span>
+                  <button
+                    type="button"
+                    onClick={runOcrScan}
+                    className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50"
+                    disabled={ocrRunning}
+                  >
+                    {ocrRunning ? "Scanning..." : "Scan text"}
+                  </button>
                 </div>
               </div>
             )}
