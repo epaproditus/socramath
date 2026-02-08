@@ -218,7 +218,7 @@ export default function LessonSessionDashboard() {
 
       {data && (
         <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px] min-h-[calc(100vh-140px)]">
-          <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full">
+          <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full flex flex-col">
             <button
               onClick={createScratchSlide}
               disabled={creatingSlide}
@@ -226,7 +226,7 @@ export default function LessonSessionDashboard() {
             >
               {creatingSlide ? "Creating..." : "+ New slide"}
             </button>
-            <div className="space-y-2 overflow-y-auto h-[calc(100%-42px)] pr-1">
+            <div className="space-y-2 overflow-y-auto flex-1 pr-1">
               {data.slides.map((slide) => {
                 const digits = String(slideCount).length;
                 const thumbFilename = `${String(slide.index).padStart(digits, "0")}.png`;
@@ -256,23 +256,35 @@ export default function LessonSessionDashboard() {
                   </button>
                 );
               })}
-              <button
-                onClick={createScratchSlide}
-                disabled={creatingSlide}
-                className="w-full rounded-xl border border-dashed border-zinc-200 px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
-              >
-                {creatingSlide ? "Creating..." : "+ New slide"}
-              </button>
             </div>
           </aside>
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-zinc-200 bg-white p-3">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-semibold text-zinc-700">
                   Slide {currentSlideIndex} of {slideCount}
                 </div>
                 <div className="flex items-center gap-2">
+                  {!slideDetail?.responseConfig?.scratch && (
+                    <button
+                      onClick={async () => {
+                        if (!slideDetail?.id) return;
+                        await fetch("/api/lesson-slide", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            slideId: slideDetail.id,
+                            responseConfig: { scratch: true },
+                          }),
+                        });
+                        await loadData();
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
+                    >
+                      Edit this slide
+                    </button>
+                  )}
                   <button
                     onClick={() => goToSlide(currentSlideIndex - 1)}
                     className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
