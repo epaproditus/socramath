@@ -164,6 +164,18 @@ export default function LessonSessionDashboard() {
     }
   };
 
+  const deleteScratchSlide = async () => {
+    if (!slideDetail?.id || !data?.session.id) return;
+    if (!confirm("Delete this scratch slide?")) return;
+    await fetch("/api/lesson-slide", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slideId: slideDetail.id }),
+    });
+    const nextIndex = Math.max(1, Math.min(currentSlideIndex, slideCount - 1));
+    await updateSession({ currentSlideIndex: nextIndex });
+  };
+
   const handleScratchImageChange = async (dataUrl: string) => {
     if (!slideDetail?.id) return;
     await fetch("/api/lesson-slide", {
@@ -283,6 +295,14 @@ export default function LessonSessionDashboard() {
                       className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
                     >
                       Edit this slide
+                    </button>
+                  )}
+                  {slideDetail?.responseConfig?.scratch && (
+                    <button
+                      onClick={deleteScratchSlide}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-700"
+                    >
+                      Delete slide
                     </button>
                   )}
                   <button

@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
-import { access, mkdir, writeFile } from "fs/promises";
+import { access, mkdir, rename, unlink, writeFile } from "fs/promises";
 import path from "path";
 
 
@@ -145,6 +145,84 @@ export async function PATCH(req: Request) {
       text,
     },
   });
+
+  return new Response("OK");
+}
+
+export async function DELETE(req: Request) {
+  const session = await auth();
+  const adminEmail = process.env.ADMIN_EMAIL;
+
+  if (!session?.user?.email || !adminEmail || session.user.email !== adminEmail) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const body = await req.json();
+  const slideId = body?.slideId as string | undefined;
+  if (!slideId) return new Response("Missing slideId", { status: 400 });
+
+  const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
+  if (!slide) return new Response("Slide not found", { status: 404 });
+
+  const responseConfig = slide.responseConfig ? JSON.parse(slide.responseConfig) : {};
+  if (!responseConfig?.scratch) {
+    return new Response("Only scratch slides can be deleted", { status: 400 });
+  }
+
+  const lesson = await prisma.lesson.findUnique({ where: { id: slide.lessonId } });
+  if (!lesson) return new Response("Lesson not found", { status: 404 });
+
+  const deletedIndex = slide.index;
+  await prisma.lessonSlide.delete({ where: { id: slideId } });
+  await prisma.lessonSlide.updateMany({
+    where: { lessonId: lesson.id, index: { gt: deletedIndex } },
+    data: { index: { decrement: 1 } },
+  });
+
+  const slidesDir = path.join(process.cwd(), "public", "uploads", "lessons", lesson.id, "slides");
+  const digits = String(Math.max(lesson.pageCount, 1)).length;
+  const renameIfExists = async (from: string, to: string) => {
+    try {
+      await access(from);
+      await rename(from, to);
+    } catch {
+      // ignore missing files
+    }
+  };
+  const deleteIfExists = async (target: string) => {
+    try {
+      await access(target);
+      await unlink(target);
+    } catch {
+      // ignore missing files
+    }
+  };
+
+  await deleteIfExists(path.join(slidesDir, `${deletedIndex}.png`));
+  await deleteIfExists(path.join(slidesDir, `${String(deletedIndex).padStart(digits, "0")}.png`));
+
+  const maxIndex = await prisma.lessonSlide.findFirst({
+    where: { lessonId: lesson.id },
+    orderBy: { index: "desc" },
+  });
+  const newMax = maxIndex?.index || 0;
+
+  for (let idx = deletedIndex + 1; idx <= lesson.pageCount; idx += 1) {
+    const fromPlain = path.join(slidesDir, `${idx}.png`);
+    const toPlain = path.join(slidesDir, `${idx - 1}.png`);
+    await renameIfExists(fromPlain, toPlain);
+
+    const fromPadded = path.join(slidesDir, `${String(idx).padStart(digits, "0")}.png`);
+    const toPadded = path.join(slidesDir, `${String(idx - 1).padStart(digits, "0")}.png`);
+    await renameIfExists(fromPadded, toPadded);
+  }
+
+  if (newMax !== lesson.pageCount) {
+    await prisma.lesson.update({
+      where: { id: lesson.id },
+      data: { pageCount: newMax },
+    });
+  }
 
   return new Response("OK");
 }
