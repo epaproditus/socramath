@@ -8,6 +8,16 @@ type LessonExcalidrawOverlayProps = {
   imageUrl: string;
   onChange?: (dataUrl: string) => void;
   onTextChange?: (text: string) => void;
+  sceneData?: {
+    elements?: unknown[];
+    files?: Record<string, unknown>;
+    appState?: Record<string, unknown>;
+  };
+  onSceneChange?: (sceneData: {
+    elements: unknown[];
+    files: Record<string, unknown>;
+    appState: Record<string, unknown>;
+  }) => void;
 };
 
 type SceneTextElement = {
@@ -20,18 +30,27 @@ const Excalidraw = dynamic(
   { ssr: false }
 );
 
-export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChange }: LessonExcalidrawOverlayProps) {
+export default function LessonExcalidrawOverlay({
+  imageUrl,
+  onChange,
+  onTextChange,
+  sceneData,
+  onSceneChange,
+}: LessonExcalidrawOverlayProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const debounceRef = useRef<number | null>(null);
   const textRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onTextChangeRef = useRef(onTextChange);
+  const onSceneChangeRef = useRef(onSceneChange);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [backgroundUrl, setBackgroundUrl] = useState(imageUrl);
   const [attemptedPlainFallback, setAttemptedPlainFallback] = useState(false);
+  const appliedSceneRef = useRef<string>("");
+  const lastEmittedSceneRef = useRef<string>("");
   const fallbackBackground =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAt8B9o0F8YkAAAAASUVORK5CYII=";
 
@@ -57,6 +76,36 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
   }, [onTextChange]);
 
   useEffect(() => {
+    onSceneChangeRef.current = onSceneChange;
+  }, [onSceneChange]);
+
+  const sceneSignature = JSON.stringify(sceneData || {});
+
+  const applySceneToApi = (signature: string) => {
+    if (!apiRef.current) return;
+    if (appliedSceneRef.current === `${imageUrl}::${signature}`) return;
+    const appState = apiRef.current.getAppState();
+    const mergedAppState = {
+      ...appState,
+      ...(sceneData?.appState || {}),
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: 1 },
+      zenModeEnabled: false,
+      viewBackgroundColor: "transparent",
+    };
+    apiRef.current.updateScene({
+      elements: Array.isArray(sceneData?.elements) ? sceneData!.elements : [],
+      files:
+        sceneData?.files && typeof sceneData.files === "object"
+          ? (sceneData.files as Record<string, unknown>)
+          : {},
+      appState: mergedAppState,
+    });
+    appliedSceneRef.current = `${imageUrl}::${signature}`;
+  };
+
+  useEffect(() => {
     setImageLoaded(false);
     setBackgroundUrl(imageUrl);
     setAttemptedPlainFallback(false);
@@ -67,7 +116,13 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
       const appState = apiRef.current.getAppState();
       apiRef.current.updateScene({ appState: { ...appState, scrollX: 0, scrollY: 0, zoom: { value: 1 } } });
     }
+    appliedSceneRef.current = "";
+    lastEmittedSceneRef.current = "";
   }, [imageUrl]);
+
+  useEffect(() => {
+    applySceneToApi(sceneSignature);
+  }, [sceneSignature, imageUrl]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -182,6 +237,26 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
         onTextChangeRef.current(text);
       }
     }
+    if (onSceneChangeRef.current && apiRef.current) {
+      const appState = apiRef.current.getAppState();
+      const scenePayload = {
+        elements: apiRef.current.getSceneElements() as unknown[],
+        files: apiRef.current.getFiles() as Record<string, unknown>,
+        appState: {
+          selectedElementIds: {},
+          activeTool: appState.activeTool,
+          editingElement: null,
+          viewModeEnabled: false,
+          theme: "light",
+          viewBackgroundColor: "transparent",
+        },
+      };
+      const signature = JSON.stringify(scenePayload);
+      if (signature !== lastEmittedSceneRef.current) {
+        lastEmittedSceneRef.current = signature;
+        onSceneChangeRef.current(scenePayload);
+      }
+    }
     if (!onChangeRef.current) return;
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current);
@@ -245,6 +320,7 @@ export default function LessonExcalidrawOverlay({ imageUrl, onChange, onTextChan
           excalidrawAPI={(api) => {
             apiRef.current = api;
             if (!api) return;
+            applySceneToApi(sceneSignature);
             requestAnimationFrame(() => {
               requestAnimationFrame(() => resetViewport());
             });

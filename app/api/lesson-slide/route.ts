@@ -126,11 +126,14 @@ export async function PATCH(req: Request) {
   const responseConfig = body?.responseConfig && typeof body.responseConfig === "object"
     ? body.responseConfig
     : undefined;
+  const sceneData = body?.sceneData && typeof body.sceneData === "object"
+    ? body.sceneData
+    : undefined;
   const text = typeof body?.text === "string" ? body.text : undefined;
   const imageDataUrl = typeof body?.imageDataUrl === "string" ? body.imageDataUrl : undefined;
   const existingSlide = await prisma.lessonSlide.findUnique({
     where: { id: slideId },
-    select: { id: true, lessonId: true, index: true },
+    select: { id: true, lessonId: true, index: true, responseConfig: true },
   });
   if (!existingSlide) {
     return new Response("Slide not found", { status: 404 });
@@ -158,13 +161,25 @@ export async function PATCH(req: Request) {
   }
 
   try {
+    let mergedResponseConfig: Record<string, unknown> | undefined;
+    if (responseConfig || sceneData) {
+      const baseConfig =
+        existingSlide.responseConfig && existingSlide.responseConfig.trim().length
+          ? (JSON.parse(existingSlide.responseConfig) as Record<string, unknown>)
+          : {};
+      mergedResponseConfig = { ...baseConfig, ...(responseConfig || {}) };
+      if (sceneData) {
+        mergedResponseConfig.sceneData = sceneData;
+      }
+    }
+
     await prisma.lessonSlide.update({
       where: { id: slideId },
       data: {
         prompt,
         rubric: rubric ? JSON.stringify(rubric) : undefined,
         responseType,
-        responseConfig: responseConfig ? JSON.stringify(responseConfig) : undefined,
+        responseConfig: mergedResponseConfig ? JSON.stringify(mergedResponseConfig) : undefined,
         text,
       },
     });
@@ -195,11 +210,6 @@ export async function DELETE(req: Request) {
 
   const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
   if (!slide) return new Response("Slide not found", { status: 404 });
-
-  const responseConfig = slide.responseConfig ? JSON.parse(slide.responseConfig) : {};
-  if (!responseConfig?.scratch) {
-    return new Response("Only scratch slides can be deleted", { status: 400 });
-  }
 
   const lesson = await prisma.lesson.findUnique({ where: { id: slide.lessonId } });
   if (!lesson) return new Response("Lesson not found", { status: 404 });

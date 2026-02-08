@@ -30,6 +30,7 @@ export default function LessonSessionDashboard() {
   const [slideSaving, setSlideSaving] = useState(false);
   const [slideMessage, setSlideMessage] = useState<string | null>(null);
   const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const sceneSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
   const scratchTextTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -77,6 +78,7 @@ export default function LessonSessionDashboard() {
   useEffect(() => {
     const loadSlide = async () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (sceneSaveTimerRef.current) clearTimeout(sceneSaveTimerRef.current);
       if (scratchTextTimerRef.current) clearTimeout(scratchTextTimerRef.current);
       if (!currentSlideId) {
         setSlideDetail(null);
@@ -186,8 +188,9 @@ export default function LessonSessionDashboard() {
 
   const deleteScratchSlide = async () => {
     if (!slideDetail?.id || !data?.session.id) return;
-    if (!confirm("Delete this scratch slide?")) return;
+    if (!confirm("Delete this slide?")) return;
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    if (sceneSaveTimerRef.current) clearTimeout(sceneSaveTimerRef.current);
     if (scratchTextTimerRef.current) clearTimeout(scratchTextTimerRef.current);
     const deletingId = slideDetail.id;
     setSlideDetail(null);
@@ -210,6 +213,36 @@ export default function LessonSessionDashboard() {
     if (res.status === 404) {
       await loadData();
     }
+  };
+
+  const handleSceneChange = (sceneData: {
+    elements: unknown[];
+    files: Record<string, unknown>;
+    appState: Record<string, unknown>;
+  }) => {
+    if (!slideDetail?.id) return;
+    const targetSlideId = slideDetail.id;
+    if (sceneSaveTimerRef.current) clearTimeout(sceneSaveTimerRef.current);
+    setSlideDetail((prev) => {
+      if (!prev || prev.id !== targetSlideId) return prev;
+      return {
+        ...prev,
+        responseConfig: {
+          ...(prev.responseConfig || {}),
+          sceneData,
+        },
+      };
+    });
+    sceneSaveTimerRef.current = setTimeout(async () => {
+      const res = await fetch("/api/lesson-slide", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slideId: targetSlideId, sceneData }),
+      });
+      if (res.status === 404) {
+        await loadData();
+      }
+    }, 700);
   };
 
   const handleScratchTextChange = (text: string) => {
@@ -312,7 +345,7 @@ export default function LessonSessionDashboard() {
                   Slide {currentSlideIndex} of {slideCount}
                 </div>
                 <div className="flex items-center gap-2">
-                  {!slideDetail?.responseConfig?.scratch && (
+                  {!slideDetail?.responseConfig?.scratch ? (
                     <button
                       onClick={async () => {
                         if (!slideDetail?.id) return;
@@ -330,8 +363,8 @@ export default function LessonSessionDashboard() {
                     >
                       Edit this slide
                     </button>
-                  )}
-                  {slideDetail?.responseConfig?.scratch && (
+                  ) : null}
+                  {slideCount > 1 && (
                     <button
                       onClick={deleteScratchSlide}
                       className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-700"
@@ -363,6 +396,12 @@ export default function LessonSessionDashboard() {
                       )}`}
                       onChange={handleScratchImageChange}
                       onTextChange={handleScratchTextChange}
+                      sceneData={(slideDetail.responseConfig?.sceneData || undefined) as {
+                        elements?: unknown[];
+                        files?: Record<string, unknown>;
+                        appState?: Record<string, unknown>;
+                      }}
+                      onSceneChange={handleSceneChange}
                     />
                   ) : (
                     <img
