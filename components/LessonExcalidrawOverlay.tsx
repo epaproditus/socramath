@@ -55,16 +55,47 @@ function loadImage(src: string) {
   });
 }
 
+function extractRichText(value: unknown): string[] {
+  const lines: string[] = [];
+
+  const walk = (node: unknown) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    const text = record.text;
+    if (typeof text === "string" && text.trim()) {
+      lines.push(text.trim());
+    }
+    if (record.content) {
+      walk(record.content);
+    }
+  };
+
+  walk(value);
+  return lines;
+}
+
 function extractTextFromShapes(shapes: TLShape[]) {
-  return shapes
-    .map((shape) => {
-      const props = (shape as { props?: Record<string, unknown> }).props;
-      if (!props) return "";
-      const text = props.text;
-      return typeof text === "string" ? text.trim() : "";
-    })
-    .filter(Boolean)
-    .join("\n");
+  const lines: string[] = [];
+  for (const shape of shapes) {
+    const props = (shape as { props?: Record<string, unknown> }).props;
+    if (!props) continue;
+
+    const directText = props.text;
+    if (typeof directText === "string" && directText.trim()) {
+      lines.push(directText.trim());
+    }
+
+    if (props.richText) {
+      lines.push(...extractRichText(props.richText));
+    }
+  }
+
+  return Array.from(new Set(lines)).join("\n");
 }
 
 export default function LessonExcalidrawOverlay({

@@ -324,6 +324,8 @@ export default function Home() {
             - If the student asks for answers, guide them with hints and questions instead.
             - If the student asks to move slides and pacing is instructor, tell them the teacher controls it.
             - If the student asks what slide they are on, answer exactly: "You're on slide ${lessonState?.currentSlideIndex || 1}."
+            - You are given student annotation text in STUDENT DRAWING TEXT. Use it when present.
+            - Never claim you cannot see what the student typed if STUDENT DRAWING TEXT is not "None.".
 
             GLOBAL TEACHER PROMPT:
             ${globalPrompt || "None."}`,
