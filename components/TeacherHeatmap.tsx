@@ -343,7 +343,7 @@ export default function TeacherHeatmap() {
 
       {selectedCell && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="h-[88vh] w-[96vw] max-w-[1400px] rounded-2xl bg-white p-6 shadow-xl flex flex-col">
+          <div className="h-[74vh] w-[86vw] max-w-[1200px] rounded-2xl bg-white p-6 shadow-xl flex flex-col">
             <div className="flex items-center justify-between">
               <div className="text-lg font-semibold">
                 {selectedCell.studentName} · Problem {selectedCell.slideIndex}
@@ -352,7 +352,7 @@ export default function TeacherHeatmap() {
                 ✕
               </button>
             </div>
-            <div className="mt-4 grid flex-1 gap-4 lg:grid-cols-[1fr_1fr]">
+            <div className="mt-4 grid flex-1 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col">
                 <div className="text-xs font-semibold uppercase text-zinc-500">Response</div>
                 <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-700 flex-1 overflow-auto">
