@@ -32,6 +32,7 @@ export default function TeacherHeatmap() {
   const [sortMode, setSortMode] = useState<SortMode>("first");
   const [timerModal, setTimerModal] = useState(false);
   const [timerMinutes, setTimerMinutes] = useState("5");
+  const [timerSeconds, setTimerSeconds] = useState("0");
   const [paceSelection, setPaceSelection] = useState<number[]>([]);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
@@ -312,15 +313,24 @@ export default function TeacherHeatmap() {
               </button>
             </div>
             <p className="mt-2 text-sm text-zinc-500">Set a timer and freeze when it ends.</p>
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <input
                 type="number"
-                min={1}
+                min={0}
                 value={timerMinutes}
                 onChange={(e) => setTimerMinutes(e.target.value)}
                 className="w-24 rounded-md border border-zinc-200 px-2 py-2 text-sm"
               />
               <span className="text-sm text-zinc-500">minutes</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={timerSeconds}
+                onChange={(e) => setTimerSeconds(e.target.value)}
+                className="w-24 rounded-md border border-zinc-200 px-2 py-2 text-sm"
+              />
+              <span className="text-sm text-zinc-500">seconds</span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
               <span className="rounded-full border border-zinc-200 bg-white px-3 py-1">
@@ -364,9 +374,12 @@ export default function TeacherHeatmap() {
                 <button
                   className="rounded-full border border-zinc-200 px-4 py-2 text-sm"
                   onClick={async () => {
-                    const remaining = Number(timerMinutes) * 60;
+                    const remaining =
+                      Math.max(0, Number(timerMinutes) || 0) * 60 +
+                      Math.min(59, Math.max(0, Number(timerSeconds) || 0));
                     const endsAt = new Date(Date.now() + remaining * 1000).toISOString();
                     await updateSession({
+                      isFrozen: false,
                       timerRunning: true,
                       timerEndsAt: endsAt,
                       timerRemainingSec: null,
@@ -383,6 +396,7 @@ export default function TeacherHeatmap() {
                     const remaining = data.session.timerRemainingSec || 0;
                     const endsAt = new Date(Date.now() + remaining * 1000).toISOString();
                     await updateSession({
+                      isFrozen: false,
                       timerRunning: true,
                       timerEndsAt: endsAt,
                       timerRemainingSec: null,
