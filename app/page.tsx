@@ -69,11 +69,6 @@ export default function Home() {
   const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [lessonChoiceValue, setLessonChoiceValue] = useState("");
   const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
-  const [lessonWidgetResponsesBySlide, setLessonWidgetResponsesBySlide] = useState<Record<string, Record<string, unknown>>>(
-    {}
-  );
-  const lessonWidgetSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lessonWidgetResponsesRef = useRef<Record<string, Record<string, unknown>>>({});
 
   useEffect(() => {
     initialize();
@@ -90,9 +85,6 @@ export default function Home() {
   useEffect(() => {
     lessonDrawingTextRef.current = lessonDrawingTextBySlide;
   }, [lessonDrawingTextBySlide]);
-  useEffect(() => {
-    lessonWidgetResponsesRef.current = lessonWidgetResponsesBySlide;
-  }, [lessonWidgetResponsesBySlide]);
 
   useEffect(() => {
     activeExperienceRef.current = activeExperience;
@@ -243,21 +235,6 @@ export default function Home() {
     drawingSaveTimer.current = setTimeout(() => {
       handleLessonDrawing(dataUrl);
     }, 700);
-  };
-
-  const handleWidgetResponseChange = (widgetId: string, value: unknown) => {
-    const slideId = lessonState?.currentSlideId;
-    const sessionId = lessonState?.session?.id;
-    if (!slideId || !sessionId) return;
-    setLessonWidgetResponsesBySlide((prev) => {
-      const existing = prev[slideId] || {};
-      return { ...prev, [slideId]: { ...existing, [widgetId]: value } };
-    });
-    if (lessonWidgetSaveTimerRef.current) clearTimeout(lessonWidgetSaveTimerRef.current);
-    lessonWidgetSaveTimerRef.current = setTimeout(() => {
-      const payload = lessonWidgetResponsesRef.current[slideId] || {};
-      saveLessonResponse(sessionId, slideId, "widget", JSON.stringify(payload));
-    }, 600);
   };
 
   useEffect(() => {
@@ -941,18 +918,6 @@ export default function Home() {
                               return { ...prev, [slideId]: text };
                             });
                           }}
-                          widgetsLayout={
-                            (lessonState.slideResponseConfig?.widgetsLayout || []) as any
-                          }
-                          widgetChoices={lessonState.slideResponseConfig?.choices || []}
-                          widgetMulti={!!lessonState.slideResponseConfig?.multi}
-                          widgetExplain={!!lessonState.slideResponseConfig?.explain}
-                          widgetResponses={
-                            lessonState.currentSlideId
-                              ? lessonWidgetResponsesBySlide[lessonState.currentSlideId] || {}
-                              : {}
-                          }
-                          onWidgetResponseChange={handleWidgetResponseChange}
                         />
                       );
                   })()
