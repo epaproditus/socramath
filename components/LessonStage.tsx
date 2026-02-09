@@ -66,6 +66,9 @@ export default function LessonStage({
             }}
           />
         )}
+        {readOnly && (
+          <div className="absolute inset-0 z-10 rounded-xl bg-zinc-900/25 backdrop-blur-[1px]" />
+        )}
         <div className="pointer-events-none absolute top-3 right-3 z-20 flex items-center justify-end">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-zinc-200 bg-white/95 px-2 py-1 shadow-sm">
             <button

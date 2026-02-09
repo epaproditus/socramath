@@ -11,6 +11,7 @@ type LessonState = {
     id: string;
     mode: "instructor" | "student";
     currentSlideIndex: number;
+    isFrozen?: boolean;
     timerEndsAt?: string | null;
     timerRemainingSec?: number | null;
     timerRunning?: boolean;
@@ -232,21 +233,26 @@ export default function LessonStudentView() {
 
             <div className="flex-1 overflow-auto p-3">
               {state?.lesson.id ? (
-                <img
-                  src={`/uploads/lessons/${state.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
-                    currentSlideCacheKey
-                  )}`}
-                  alt={`Slide ${currentSlideIndex}`}
-                  className="h-[420px] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (target.dataset.fallbackApplied === "1") return;
-                    target.dataset.fallbackApplied = "1";
-                    target.src = `/uploads/lessons/${state.lesson.id}/slides/${currentSlideIndex}.png?v=${encodeURIComponent(
+                <div className="relative">
+                  <img
+                    src={`/uploads/lessons/${state.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
                       currentSlideCacheKey
-                    )}`;
-                  }}
-                />
+                    )}`}
+                    alt={`Slide ${currentSlideIndex}`}
+                    className="h-[420px] w-full rounded-lg border border-zinc-200 object-contain bg-zinc-50"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (target.dataset.fallbackApplied === "1") return;
+                      target.dataset.fallbackApplied = "1";
+                      target.src = `/uploads/lessons/${state.lesson.id}/slides/${currentSlideIndex}.png?v=${encodeURIComponent(
+                        currentSlideCacheKey
+                      )}`;
+                    }}
+                  />
+                  {state?.session?.isFrozen && (
+                    <div className="absolute inset-0 rounded-lg bg-zinc-900/25 backdrop-blur-[1px]" />
+                  )}
+                </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-sm text-zinc-500">
                   No PDF available.
