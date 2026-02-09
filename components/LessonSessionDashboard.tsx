@@ -6,6 +6,7 @@ import Link from "next/link";
 import RichTextEditor from "@/components/RichTextEditor";
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 import TeacherHeatmap from "@/components/TeacherHeatmap";
+import LessonWidgetLayer, { LessonWidgetPlacement } from "@/components/LessonWidgetLayer";
 
 type Slide = { id: string; index: number };
 type LessonSessionPayload = {
@@ -39,6 +40,7 @@ export default function LessonSessionDashboard() {
   const [activeTab, setActiveTab] = useState<"builder" | "heatmap">("builder");
   const [ocrRunning, setOcrRunning] = useState(false);
   const overlayRef = useRef<{ runOcr: () => Promise<void> } | null>(null);
+  const slideCanvasRef = useRef<HTMLDivElement | null>(null);
 
   const currentSlideIndex = data?.session.currentSlideIndex || 1;
   const slideCount = data?.lesson.pageCount || data?.slides.length || 1;
@@ -157,6 +159,37 @@ export default function LessonSessionDashboard() {
       responseType: slideDetail.responseType || "text",
       responseConfig: slideDetail.responseConfig || {},
     });
+  };
+
+  const updateWidgets = (widgets: LessonWidgetPlacement[]) => {
+    if (!slideDetail) return;
+    const nextConfig = {
+      ...(slideDetail.responseConfig || {}),
+      widgetsLayout: widgets,
+    };
+    setSlideDetail({ ...slideDetail, responseConfig: nextConfig });
+    scheduleAutosave();
+  };
+
+  const addWidget = (type: LessonWidgetPlacement["type"], x: number, y: number) => {
+    if (!slideDetail) return;
+    const id = `w_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const defaults =
+      type === "choice"
+        ? { w: 0.38, h: 0.32 }
+        : { w: 0.35, h: 0.22 };
+    const nextWidget: LessonWidgetPlacement = {
+      id,
+      type,
+      x: Math.max(0, Math.min(1 - defaults.w, x)),
+      y: Math.max(0, Math.min(1 - defaults.h, y)),
+      w: defaults.w,
+      h: defaults.h,
+    };
+    const existing = Array.isArray(slideDetail.responseConfig?.widgetsLayout)
+      ? (slideDetail.responseConfig.widgetsLayout as LessonWidgetPlacement[])
+      : [];
+    updateWidgets([...existing, nextWidget]);
   };
 
   const scheduleAutosave = () => {
@@ -398,20 +431,78 @@ export default function LessonSessionDashboard() {
 
               {data.lesson.id ? (
                 <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50">
-                  <LessonExcalidrawOverlay
-                    ref={overlayRef}
-                    imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
-                      currentSlideCacheKey
-                    )}`}
-                    onTextChange={handleScratchTextChange}
-                    onOcrText={handleScratchTextChange}
-                    sceneData={(slideDetail?.responseConfig?.sceneData || undefined) as {
-                      elements?: unknown[];
-                      files?: Record<string, unknown>;
-                      appState?: Record<string, unknown>;
+                  <div className="flex flex-wrap items-center gap-2 px-3 pt-3 text-xs text-zinc-600">
+                    <span className="rounded-full border border-zinc-200 bg-white px-2 py-1 text-[11px] font-semibold">
+                      Drag widgets onto the slide
+                    </span>
+                    <div
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/widget", "text");
+                      }}
+                      className="cursor-grab rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px]"
+                    >
+                      Text response
+                    </div>
+                    <div
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/widget", "choice");
+                      }}
+                      className="cursor-grab rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px]"
+                    >
+                      Multiple choice
+                    </div>
+                    <button
+                      type="button"
+                      onClick={runOcrScan}
+                      disabled={ocrRunning}
+                      className="ml-auto rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px]"
+                    >
+                      {ocrRunning ? "Scanning..." : "OCR slide"}
+                    </button>
+                  </div>
+                  <div
+                    ref={slideCanvasRef}
+                    className="relative"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      const type = event.dataTransfer.getData("application/widget");
+                      if (type !== "text" && type !== "choice") return;
+                      const rect = slideCanvasRef.current?.getBoundingClientRect();
+                      if (!rect) return;
+                      const x = (event.clientX - rect.left) / rect.width;
+                      const y = (event.clientY - rect.top) / rect.height;
+                      addWidget(type as LessonWidgetPlacement["type"], x, y);
                     }}
-                    onSceneChange={handleSceneChange}
-                  />
+                  >
+                    <LessonExcalidrawOverlay
+                      ref={overlayRef}
+                      imageUrl={`/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
+                        currentSlideCacheKey
+                      )}`}
+                      onTextChange={handleScratchTextChange}
+                      onOcrText={handleScratchTextChange}
+                      sceneData={(slideDetail?.responseConfig?.sceneData || undefined) as {
+                        elements?: unknown[];
+                        files?: Record<string, unknown>;
+                        appState?: Record<string, unknown>;
+                      }}
+                      onSceneChange={handleSceneChange}
+                    />
+                    <LessonWidgetLayer
+                      containerRef={slideCanvasRef}
+                      widgets={
+                        (slideDetail?.responseConfig?.widgetsLayout ||
+                          []) as LessonWidgetPlacement[]
+                      }
+                      mode="builder"
+                      choices={slideDetail?.responseConfig?.choices || []}
+                      multi={!!slideDetail?.responseConfig?.multi}
+                      explain={!!slideDetail?.responseConfig?.explain}
+                      onWidgetsChange={updateWidgets}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-sm text-zinc-500">

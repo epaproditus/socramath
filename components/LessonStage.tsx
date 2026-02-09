@@ -1,6 +1,8 @@
 "use client";
 
+import { useRef } from "react";
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
+import LessonWidgetLayer, { LessonWidgetPlacement } from "@/components/LessonWidgetLayer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 type LessonStageProps = {
@@ -21,6 +23,12 @@ type LessonStageProps = {
     files?: Record<string, unknown>;
     appState?: Record<string, unknown>;
   };
+  widgetsLayout?: LessonWidgetPlacement[];
+  widgetChoices?: string[];
+  widgetMulti?: boolean;
+  widgetExplain?: boolean;
+  widgetResponses?: Record<string, unknown>;
+  onWidgetResponseChange?: (widgetId: string, value: unknown) => void;
 };
 
 export default function LessonStage({
@@ -36,15 +44,22 @@ export default function LessonStage({
   onDrawingTextChange,
   readOnly,
   sceneData,
+  widgetsLayout = [],
+  widgetChoices = [],
+  widgetMulti,
+  widgetExplain,
+  widgetResponses,
+  onWidgetResponseChange,
 }: LessonStageProps) {
   const cacheParam = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
   const slideImageUrl = `/uploads/lessons/${lessonId}/slides/${slideFilename}${cacheParam}`;
+  const stageRef = useRef<HTMLDivElement | null>(null);
   return (
     <div
       className="flex h-full w-full items-start justify-center p-4 overflow-y-auto"
       data-lesson-scroll
     >
-      <div className="relative w-full max-w-[1400px] pt-14 pb-4">
+      <div ref={stageRef} className="relative w-full max-w-[1400px] pt-14 pb-4">
         {showDrawing ? (
           <LessonExcalidrawOverlay
             imageUrl={slideImageUrl}
@@ -64,6 +79,19 @@ export default function LessonStage({
               target.dataset.fallbackApplied = "1";
               target.src = `/uploads/lessons/${lessonId}/slides/${currentSlideIndex}.png${cacheParam}`;
             }}
+          />
+        )}
+        {widgetsLayout.length > 0 && stageRef && (
+          <LessonWidgetLayer
+            containerRef={stageRef}
+            widgets={widgetsLayout}
+            mode="student"
+            choices={widgetChoices}
+            multi={widgetMulti}
+            explain={widgetExplain}
+            readOnly={readOnly}
+            responses={widgetResponses}
+            onResponseChange={onWidgetResponseChange}
           />
         )}
         <div className="pointer-events-none absolute top-3 right-3 z-20 flex items-center justify-end">
