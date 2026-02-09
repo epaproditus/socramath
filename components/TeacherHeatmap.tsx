@@ -1,11 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Eye, Filter, Hand, Snowflake, Download, Shrink, Glasses, CheckCircle2, List } from "lucide-react";
+import { Filter, Hand, Snowflake, Download, Shrink, Glasses, CheckCircle2, List, Timer } from "lucide-react";
 
 type HeatmapPayload = {
   lesson: { id: string; title: string; pageCount: number };
-  session: { id: string; mode: "instructor" | "student"; currentSlideIndex: number };
+  session: {
+    id: string;
+    mode: "instructor" | "student";
+    currentSlideIndex: number;
+    isFrozen: boolean;
+    paceConfig: { allowedSlides?: number[] } | null;
+    timerEndsAt?: string | null;
+    timerRemainingSec?: number | null;
+    timerRunning?: boolean;
+  };
   slides: { id: string; index: number }[];
   students: { id: string; name: string; email?: string | null }[];
   responses: { key: string; response: string; drawingPath: string; updatedAt: string }[];
@@ -21,6 +30,9 @@ export default function TeacherHeatmap() {
   const [hideNames, setHideNames] = useState(false);
   const [flatMode, setFlatMode] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("first");
+  const [timerModal, setTimerModal] = useState(false);
+  const [timerMinutes, setTimerMinutes] = useState("5");
+  const [paceSelection, setPaceSelection] = useState<number[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -39,6 +51,45 @@ export default function TeacherHeatmap() {
     }, 3000);
     return () => clearInterval(interval);
   }, [freeze]);
+
+  useEffect(() => {
+    if (paceModal && data?.session.paceConfig?.allowedSlides) {
+      setPaceSelection([...data.session.paceConfig.allowedSlides]);
+    } else if (paceModal && !data?.session.paceConfig?.allowedSlides) {
+      setPaceSelection(slides.map((slide) => slide.index));
+    }
+  }, [paceModal, data?.session.paceConfig, slides]);
+
+  const updateSession = async (updates: Record<string, unknown>) => {
+    if (!data?.session.id) return;
+    await fetch("/api/lesson-session", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: data.session.id, ...updates }),
+    });
+    const res = await fetch("/api/lesson-heatmap");
+    if (res.ok) {
+      setData(await res.json());
+    }
+  };
+
+  const remainingSeconds = useMemo(() => {
+    if (!data?.session) return 0;
+    if (data.session.timerRunning && data.session.timerEndsAt) {
+      const end = new Date(data.session.timerEndsAt).getTime();
+      return Math.max(0, Math.floor((end - Date.now()) / 1000));
+    }
+    if (typeof data.session.timerRemainingSec === "number") {
+      return Math.max(0, data.session.timerRemainingSec);
+    }
+    return 0;
+  }, [data?.session]);
+
+  const formatTime = (totalSec: number) => {
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${String(sec).padStart(2, "0")}`;
+  };
 
   const responsesMap = useMemo(() => {
     const map = new Map<string, { response: string; drawingPath: string; updatedAt: string }>();
@@ -96,7 +147,11 @@ export default function TeacherHeatmap() {
           <button className="rounded-full border border-zinc-200 p-2" title="Pace students" onClick={() => setPaceModal(true)}>
             <Filter className="h-4 w-4" />
           </button>
-          <button className={`rounded-full border border-zinc-200 p-2 ${freeze ? "bg-zinc-100" : ""}`} title="Freeze students" onClick={() => setFreeze((v) => !v)}>
+          <button
+            className={`rounded-full border border-zinc-200 p-2 ${data.session.isFrozen ? "bg-zinc-100" : ""}`}
+            title="Freeze students"
+            onClick={() => updateSession({ isFrozen: !data.session.isFrozen })}
+          >
             <Snowflake className="h-4 w-4" />
           </button>
           <button className="rounded-full border border-zinc-200 p-2" title="Download">
@@ -104,6 +159,13 @@ export default function TeacherHeatmap() {
           </button>
           <button className="rounded-full border border-zinc-200 p-2" title="Compress view">
             <Shrink className="h-4 w-4" />
+          </button>
+          <button
+            className="rounded-full border border-zinc-200 p-2"
+            title="Timer"
+            onClick={() => setTimerModal(true)}
+          >
+            <Timer className="h-4 w-4" />
           </button>
           <button className={`rounded-full border border-zinc-200 p-2 ${hideNames ? "bg-zinc-100" : ""}`} title="Hide names" onClick={() => setHideNames((v) => !v)}>
             <Glasses className="h-4 w-4" />
@@ -116,6 +178,9 @@ export default function TeacherHeatmap() {
           </button>
         </div>
       </div>
+      {data.session.timerRunning || data.session.timerRemainingSec ? (
+        <div className="text-xs text-zinc-500">Timer: {formatTime(remainingSeconds)}</div>
+      ) : null}
 
       <div className="rounded-xl border border-zinc-200 bg-white p-3 overflow-auto">
         <div className="grid" style={{ gridTemplateColumns: `220px repeat(${slides.length}, 84px)` }}>
@@ -168,9 +233,33 @@ export default function TeacherHeatmap() {
               Select problems to allow. This is UI only for now.
             </p>
             <div className="mt-4 space-y-2 max-h-64 overflow-auto">
+              <label className="flex items-center gap-2 text-sm text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={paceSelection.length === slides.length}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setPaceSelection(slides.map((slide) => slide.index));
+                    } else {
+                      setPaceSelection([]);
+                    }
+                  }}
+                />
+                All problems
+              </label>
               {slides.map((slide) => (
                 <label key={slide.id} className="flex items-center gap-2 text-sm text-zinc-600">
-                  <input type="checkbox" defaultChecked />
+                  <input
+                    type="checkbox"
+                    checked={paceSelection.includes(slide.index)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setPaceSelection((prev) => Array.from(new Set([...prev, slide.index])));
+                      } else {
+                        setPaceSelection((prev) => prev.filter((idx) => idx !== slide.index));
+                      }
+                    }}
+                  />
                   Problem {slide.index}
                 </label>
               ))}
@@ -179,8 +268,99 @@ export default function TeacherHeatmap() {
               <button className="rounded-full border border-zinc-200 px-4 py-2 text-sm" onClick={() => setPaceModal(false)}>
                 Cancel
               </button>
-              <button className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white" onClick={() => setPaceModal(false)}>
+              <button
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white"
+                onClick={async () => {
+                  await updateSession({ paceConfig: { allowedSlides: paceSelection } });
+                  setPaceModal(false);
+                }}
+              >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {timerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-[420px] rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold">Timer</div>
+              <button className="text-zinc-400" onClick={() => setTimerModal(false)}>
+                ✕
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-zinc-500">Set a timer and freeze when it ends.</p>
+            <div className="mt-4 flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                value={timerMinutes}
+                onChange={(e) => setTimerMinutes(e.target.value)}
+                className="w-24 rounded-md border border-zinc-200 px-2 py-2 text-sm"
+              />
+              <span className="text-sm text-zinc-500">minutes</span>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-2">
+              {data.session.timerRunning ? (
+                <button
+                  className="rounded-full border border-zinc-200 px-4 py-2 text-sm"
+                  onClick={async () => {
+                    const remaining = remainingSeconds;
+                    await updateSession({
+                      timerRunning: false,
+                      timerEndsAt: null,
+                      timerRemainingSec: remaining,
+                    });
+                  }}
+                >
+                  Pause
+                </button>
+              ) : (
+                <button
+                  className="rounded-full border border-zinc-200 px-4 py-2 text-sm"
+                  onClick={async () => {
+                    const remaining = Number(timerMinutes) * 60;
+                    const endsAt = new Date(Date.now() + remaining * 1000).toISOString();
+                    await updateSession({
+                      timerRunning: true,
+                      timerEndsAt: endsAt,
+                      timerRemainingSec: null,
+                    });
+                  }}
+                >
+                  Start
+                </button>
+              )}
+              {!data.session.timerRunning && data.session.timerRemainingSec ? (
+                <button
+                  className="rounded-full border border-zinc-200 px-4 py-2 text-sm"
+                  onClick={async () => {
+                    const remaining = data.session.timerRemainingSec || 0;
+                    const endsAt = new Date(Date.now() + remaining * 1000).toISOString();
+                    await updateSession({
+                      timerRunning: true,
+                      timerEndsAt: endsAt,
+                      timerRemainingSec: null,
+                    });
+                  }}
+                >
+                  Resume
+                </button>
+              ) : null}
+              <button
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white"
+                onClick={async () => {
+                  await updateSession({
+                    timerRunning: false,
+                    timerEndsAt: null,
+                    timerRemainingSec: 0,
+                  });
+                  setTimerModal(false);
+                }}
+              >
+                Stop
               </button>
             </div>
           </div>

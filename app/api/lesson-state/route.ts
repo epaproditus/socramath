@@ -37,6 +37,35 @@ export async function GET() {
   }
 
   let currentSlideIndex = lessonSession.currentSlideIndex;
+  let isFrozen = lessonSession.isFrozen;
+  let paceConfig: { allowedSlides?: number[] } | null = null;
+  if (lessonSession.paceConfig) {
+    try {
+      paceConfig = JSON.parse(lessonSession.paceConfig);
+    } catch {
+      paceConfig = null;
+    }
+  }
+  let timerRunning = lessonSession.timerRunning;
+  let timerEndsAt = lessonSession.timerEndsAt;
+  let timerRemainingSec = lessonSession.timerRemainingSec;
+  if (timerRunning && timerEndsAt && timerEndsAt.getTime() <= Date.now()) {
+    timerRunning = false;
+    timerEndsAt = null;
+    timerRemainingSec = 0;
+    isFrozen = true;
+    await prisma.lessonSession
+      .update({
+        where: { id: lessonSession.id },
+        data: {
+          timerRunning: false,
+          timerEndsAt: null,
+          timerRemainingSec: 0,
+          isFrozen: true,
+        },
+      })
+      .catch(() => {});
+  }
   if (lessonSession.mode === "student") {
     const state = await prisma.lessonSessionState.upsert({
       where: {
@@ -61,6 +90,32 @@ export async function GET() {
     select: { id: true, index: true },
   });
   const maxSlideIndex = slides[slides.length - 1]?.index || 1;
+  const allowedSlides = Array.isArray(paceConfig?.allowedSlides)
+    ? paceConfig?.allowedSlides?.filter((idx) => typeof idx === "number")
+    : null;
+  if (allowedSlides && allowedSlides.length) {
+    const sorted = Array.from(new Set(allowedSlides)).sort((a, b) => a - b);
+    if (!sorted.includes(currentSlideIndex)) {
+      currentSlideIndex = sorted[0] || 1;
+      if (lessonSession.mode === "student") {
+        await prisma.lessonSessionState.update({
+          where: {
+            sessionId_userId: {
+              sessionId: lessonSession.id,
+              userId: session.user.id,
+            },
+          },
+          data: { currentSlideIndex },
+        }).catch(() => {});
+      } else {
+        await prisma.lessonSession.update({
+          where: { id: lessonSession.id },
+          data: { currentSlideIndex },
+        }).catch(() => {});
+      }
+    }
+  }
+
   if (currentSlideIndex > maxSlideIndex) {
     currentSlideIndex = maxSlideIndex;
     if (lessonSession.mode === "student") {
@@ -96,6 +151,11 @@ export async function GET() {
       id: lessonSession.id,
       mode: lessonSession.mode,
       currentSlideIndex,
+      isFrozen,
+      paceConfig,
+      timerEndsAt,
+      timerRemainingSec,
+      timerRunning,
     },
     currentSlideIndex,
     currentSlideId: slide?.id || null,
@@ -135,6 +195,24 @@ export async function POST(req: Request) {
 
   if (lessonSession.mode !== "student") {
     return new Response("Session is instructor-paced", { status: 400 });
+  }
+  if (lessonSession.isFrozen) {
+    return new Response("Session is frozen", { status: 423 });
+  }
+
+  let paceConfig: { allowedSlides?: number[] } | null = null;
+  if (lessonSession.paceConfig) {
+    try {
+      paceConfig = JSON.parse(lessonSession.paceConfig);
+    } catch {
+      paceConfig = null;
+    }
+  }
+  const allowedSlides = Array.isArray(paceConfig?.allowedSlides)
+    ? paceConfig?.allowedSlides?.filter((idx) => typeof idx === "number")
+    : null;
+  if (allowedSlides && allowedSlides.length && !allowedSlides.includes(currentSlideIndex)) {
+    return new Response("Slide not allowed", { status: 403 });
   }
 
   try {

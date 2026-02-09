@@ -75,6 +75,11 @@ export async function GET() {
       id: sessionRow.id,
       mode: sessionRow.mode,
       currentSlideIndex: sessionRow.currentSlideIndex,
+      isFrozen: sessionRow.isFrozen,
+      paceConfig: sessionRow.paceConfig ? JSON.parse(sessionRow.paceConfig) : null,
+      timerEndsAt: sessionRow.timerEndsAt,
+      timerRemainingSec: sessionRow.timerRemainingSec,
+      timerRunning: sessionRow.timerRunning,
     },
     slides,
   });
@@ -100,6 +105,21 @@ export async function PATCH(req: Request) {
   }
   if (typeof body?.currentSlideIndex === "number") {
     data.currentSlideIndex = Math.max(1, body.currentSlideIndex);
+  }
+  if (typeof body?.isFrozen === "boolean") {
+    data.isFrozen = body.isFrozen;
+  }
+  if (typeof body?.timerRunning === "boolean") {
+    data.timerRunning = body.timerRunning;
+  }
+  if (typeof body?.timerRemainingSec === "number") {
+    data.timerRemainingSec = body.timerRemainingSec;
+  }
+  if (typeof body?.timerEndsAt === "string" || body?.timerEndsAt === null) {
+    data.timerEndsAt = body.timerEndsAt ? new Date(body.timerEndsAt) : null;
+  }
+  if (body?.paceConfig && typeof body.paceConfig === "object") {
+    data.paceConfig = JSON.stringify(body.paceConfig);
   }
 
   if (!Object.keys(data).length) {

@@ -14,6 +14,7 @@ type LessonStageProps = {
   showDrawing: boolean;
   onDrawingChange?: (dataUrl: string) => void;
   onDrawingTextChange?: (text: string) => void;
+  readOnly?: boolean;
   sceneData?: {
     snapshot?: Record<string, unknown>;
     elements?: unknown[];
@@ -33,6 +34,7 @@ export default function LessonStage({
   showDrawing,
   onDrawingChange,
   onDrawingTextChange,
+  readOnly,
   sceneData,
 }: LessonStageProps) {
   const cacheParam = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
@@ -49,6 +51,7 @@ export default function LessonStage({
             onChange={onDrawingChange}
             onTextChange={onDrawingTextChange}
             sceneData={sceneData}
+            readOnly={readOnly}
           />
         ) : (
           <img

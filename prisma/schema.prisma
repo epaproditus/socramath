@@ -198,6 +198,11 @@ model LessonSession {
   mode              String   @default("instructor") // instructor | student
   currentSlideIndex Int      @default(1)
   isActive          Boolean  @default(true)
+  isFrozen          Boolean  @default(false)
+  paceConfig        String?
+  timerEndsAt       DateTime?
+  timerRemainingSec Int?
+  timerRunning      Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

@@ -10,6 +10,7 @@ type LessonExcalidrawOverlayProps = {
   onChange?: (dataUrl: string) => void;
   onTextChange?: (text: string) => void;
   onOcrText?: (text: string) => void;
+  readOnly?: boolean;
   sceneData?: {
     elements?: unknown[];
     files?: Record<string, unknown>;
@@ -105,6 +106,7 @@ const LessonExcalidrawOverlay = forwardRef(function LessonExcalidrawOverlay(
     onChange,
     onTextChange,
     onOcrText,
+    readOnly,
     sceneData,
     onSceneChange,
   }: LessonExcalidrawOverlayProps,
@@ -308,7 +310,11 @@ const LessonExcalidrawOverlay = forwardRef(function LessonExcalidrawOverlay(
         }}
       />
 
-      <div className="absolute left-0 top-0 z-10 h-full w-full tldraw-transparent">
+      <div
+        className={`absolute left-0 top-0 z-10 h-full w-full tldraw-transparent ${
+          readOnly ? "pointer-events-none" : ""
+        }`}
+      >
         <Tldraw
           key={editorKey}
           autoFocus={false}

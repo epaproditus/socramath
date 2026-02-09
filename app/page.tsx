@@ -22,6 +22,11 @@ type LessonState = {
     id: string;
     mode: "instructor" | "student";
     currentSlideIndex: number;
+    isFrozen?: boolean;
+    paceConfig?: { allowedSlides?: number[] } | null;
+    timerEndsAt?: string | null;
+    timerRemainingSec?: number | null;
+    timerRunning?: boolean;
   };
   currentSlideIndex: number;
   currentSlideId: string | null;
@@ -195,6 +200,11 @@ export default function Home() {
 
   const handleLessonSlideChange = async (nextIndex: number) => {
     if (!lessonState) return;
+    if (lessonState.session?.isFrozen) return;
+    const allowed = Array.isArray(lessonState.session?.paceConfig?.allowedSlides)
+      ? lessonState.session.paceConfig.allowedSlides
+      : null;
+    if (allowed && allowed.length && !allowed.includes(nextIndex)) return;
     const max = lessonState.lesson.pageCount || lessonState.slides.length || 1;
     const clamped = Math.max(1, Math.min(nextIndex, max));
     setLessonState({ ...lessonState, currentSlideIndex: clamped });
@@ -896,6 +906,7 @@ export default function Home() {
                           sessionMode={lessonState.session.mode}
                           onChangeSlide={handleLessonSlideChange}
                           showDrawing={showDrawing}
+                          readOnly={!!lessonState.session.isFrozen}
                           onDrawingChange={showDrawing ? handleDrawingChange : undefined}
                           sceneData={lessonState.slideResponseConfig?.sceneData}
                           onDrawingTextChange={(text) => {
