@@ -5,7 +5,7 @@ import { Thread } from "@/components/assistant-ui/thread";
 import { useAppStore } from "@/lib/store";
 import { Link2 } from "lucide-react";
 import Link from "next/link";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 import LessonStage from "@/components/LessonStage";
