@@ -290,12 +290,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!lessonState || activeExperienceRef.current !== "lesson") return;
-    if (lessonState.session.mode !== "instructor") return;
+    const shouldPoll = lessonState.session.mode === "instructor" || !!lessonState.session.timerRunning;
+    if (!shouldPoll) return;
     const interval = setInterval(() => {
       loadLessonState();
     }, 2000);
     return () => clearInterval(interval);
-  }, [lessonState?.session.id, lessonState?.session.mode]);
+  }, [lessonState?.session.id, lessonState?.session.mode, lessonState?.session.timerRunning]);
 
   useEffect(() => {
     if (!lessonState?.session?.timerRunning) return;
