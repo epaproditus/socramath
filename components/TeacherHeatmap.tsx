@@ -93,6 +93,25 @@ export default function TeacherHeatmap() {
     return `${min}:${String(sec).padStart(2, "0")}`;
   };
 
+  const adjustTimerBy = async (deltaSec: number) => {
+    if (!data?.session) return;
+    const nextRemaining = Math.max(0, remainingSeconds + deltaSec);
+    if (data.session.timerRunning) {
+      const endsAt = new Date(Date.now() + nextRemaining * 1000).toISOString();
+      await updateSession({
+        timerRunning: true,
+        timerEndsAt: endsAt,
+        timerRemainingSec: null,
+      });
+    } else {
+      await updateSession({
+        timerRunning: false,
+        timerEndsAt: null,
+        timerRemainingSec: nextRemaining,
+      });
+    }
+  };
+
   const responsesMap = useMemo(() => {
     const map = new Map<string, { response: string; drawingPath: string; updatedAt: string }>();
     data?.responses.forEach((r) => map.set(r.key, r));
@@ -302,6 +321,29 @@ export default function TeacherHeatmap() {
                 className="w-24 rounded-md border border-zinc-200 px-2 py-2 text-sm"
               />
               <span className="text-sm text-zinc-500">minutes</span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1">
+                Current: {formatTime(remainingSeconds)}
+              </span>
+              <button
+                className="rounded-full border border-zinc-200 bg-white px-3 py-1 hover:bg-zinc-50"
+                onClick={() => adjustTimerBy(30)}
+              >
+                +30s
+              </button>
+              <button
+                className="rounded-full border border-zinc-200 bg-white px-3 py-1 hover:bg-zinc-50"
+                onClick={() => adjustTimerBy(60)}
+              >
+                +1m
+              </button>
+              <button
+                className="rounded-full border border-zinc-200 bg-white px-3 py-1 hover:bg-zinc-50"
+                onClick={() => adjustTimerBy(300)}
+              >
+                +5m
+              </button>
             </div>
             <div className="mt-6 flex items-center justify-end gap-2">
               {data.session.timerRunning ? (

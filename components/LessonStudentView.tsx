@@ -214,9 +214,9 @@ export default function LessonStudentView() {
                 </button>
               </div>
               {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
-                <div className="pointer-events-none absolute -left-3 top-3 z-20">
+                <div className="pointer-events-none absolute -left-5 top-2 z-20">
                   <div
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm ${
+                    className={`rounded-full border px-4 py-2 text-lg font-bold shadow-sm ${
                       remainingSeconds <= 10
                         ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
                         : remainingSeconds <= 30
@@ -224,7 +224,7 @@ export default function LessonStudentView() {
                         : "border-zinc-200 bg-white text-zinc-700"
                     }`}
                   >
-                    Timer: {formatTime(remainingSeconds)}
+                    {formatTime(remainingSeconds)}
                   </div>
                 </div>
               )}

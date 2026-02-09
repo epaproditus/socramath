@@ -960,9 +960,9 @@ export default function Home() {
                 style={sidebarOpen ? { width: Math.max(420, sidebarWidth) } : undefined}
               >
                 {(lessonState?.session?.timerRunning || lessonState?.session?.timerRemainingSec) && (
-                  <div className="pointer-events-none absolute -left-3 top-3 z-40">
+                  <div className="pointer-events-none absolute -left-5 top-3 z-40">
                     <div
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm ${
+                      className={`rounded-full border px-4 py-2 text-lg font-bold shadow-sm ${
                         remainingSeconds <= 10
                           ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
                           : remainingSeconds <= 30
@@ -970,7 +970,7 @@ export default function Home() {
                           : "border-zinc-200 bg-white text-zinc-700"
                       }`}
                     >
-                      Timer: {formatTime(remainingSeconds)}
+                      {formatTime(remainingSeconds)}
                     </div>
                   </div>
                 )}
