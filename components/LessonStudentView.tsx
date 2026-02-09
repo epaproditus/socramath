@@ -7,7 +7,14 @@ import { Assistant } from "@/app/assistant";
 type Slide = { id: string; index: number };
 type LessonState = {
   lesson: { id: string; title: string; pdfPath?: string | null; pageCount: number };
-  session: { id: string; mode: "instructor" | "student"; currentSlideIndex: number };
+  session: {
+    id: string;
+    mode: "instructor" | "student";
+    currentSlideIndex: number;
+    timerEndsAt?: string | null;
+    timerRemainingSec?: number | null;
+    timerRunning?: boolean;
+  };
   currentSlideIndex: number;
   slides: Slide[];
 };
@@ -19,9 +26,27 @@ export default function LessonStudentView() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"chat" | "slide">("chat");
+  const [timerNow, setTimerNow] = useState(() => Date.now());
 
   const slideCount = state?.lesson.pageCount || state?.slides.length || 1;
   const currentSlideIndex = state?.currentSlideIndex || 1;
+  const remainingSeconds = useMemo(() => {
+    if (!state?.session) return 0;
+    if (state.session.timerRunning && state.session.timerEndsAt) {
+      const end = new Date(state.session.timerEndsAt).getTime();
+      return Math.max(0, Math.floor((end - timerNow) / 1000));
+    }
+    if (typeof state.session.timerRemainingSec === "number") {
+      return Math.max(0, state.session.timerRemainingSec);
+    }
+    return 0;
+  }, [state?.session, timerNow]);
+
+  const formatTime = (totalSec: number) => {
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${String(sec).padStart(2, "0")}`;
+  };
 
   const currentSlideId = useMemo(() => {
     const slide = state?.slides.find((s) => s.index === currentSlideIndex);
@@ -68,12 +93,22 @@ export default function LessonStudentView() {
   }, []);
 
   useEffect(() => {
-    if (!state || state.session.mode !== "instructor") return;
+    if (!state) return;
+    const shouldPoll = state.session.mode === "instructor" || !!state.session.timerRunning;
+    if (!shouldPoll) return;
     const interval = setInterval(() => {
       loadState();
     }, 2000);
     return () => clearInterval(interval);
-  }, [state?.session.mode]);
+  }, [state?.session.mode, state?.session.timerRunning]);
+
+  useEffect(() => {
+    if (!state?.session?.timerRunning) return;
+    const interval = setInterval(() => {
+      setTimerNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [state?.session?.timerRunning, state?.session?.timerEndsAt]);
 
   const updateStudentSlide = async (index: number) => {
     if (!state) return;
@@ -155,8 +190,15 @@ export default function LessonStudentView() {
 
           <div className="flex w-full flex-col border-t border-zinc-200 lg:w-[420px] lg:border-t-0">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 text-sm">
-              <div>
-                Slide {currentSlideIndex} of {slideCount}
+              <div className="flex items-center gap-3">
+                <div>
+                  Slide {currentSlideIndex} of {slideCount}
+                </div>
+                {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
+                  <div className="text-xs text-zinc-500">
+                    Timer: {formatTime(remainingSeconds)}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button

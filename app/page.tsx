@@ -69,6 +69,7 @@ export default function Home() {
   const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [lessonChoiceValue, setLessonChoiceValue] = useState("");
   const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
+  const [timerNow, setTimerNow] = useState(() => Date.now());
 
   useEffect(() => {
     initialize();
@@ -295,6 +296,32 @@ export default function Home() {
     }, 2000);
     return () => clearInterval(interval);
   }, [lessonState?.session.id, lessonState?.session.mode]);
+
+  useEffect(() => {
+    if (!lessonState?.session?.timerRunning) return;
+    const interval = setInterval(() => {
+      setTimerNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lessonState?.session?.timerRunning, lessonState?.session?.timerEndsAt]);
+
+  const remainingSeconds = useMemo(() => {
+    if (!lessonState?.session) return 0;
+    if (lessonState.session.timerRunning && lessonState.session.timerEndsAt) {
+      const end = new Date(lessonState.session.timerEndsAt).getTime();
+      return Math.max(0, Math.floor((end - timerNow) / 1000));
+    }
+    if (typeof lessonState.session.timerRemainingSec === "number") {
+      return Math.max(0, lessonState.session.timerRemainingSec);
+    }
+    return 0;
+  }, [lessonState?.session, timerNow]);
+
+  const formatTime = (totalSec: number) => {
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${String(sec).padStart(2, "0")}`;
+  };
 
   // bottom-left / bottom-right toggle only
 
@@ -898,27 +925,34 @@ export default function Home() {
                       ? lessonState.currentSlideId
                       : `${lessonState.currentSlideIndex}`;
                       return (
-                        <LessonStage
-                          lessonId={lessonState.lesson.id}
-                          slideFilename={slideFilename}
-                          cacheKey={slideCacheKey}
-                          currentSlideIndex={lessonState.currentSlideIndex}
-                          slideCount={lessonState.lesson.pageCount || lessonState.slides.length || 1}
-                          sessionMode={lessonState.session.mode}
-                          onChangeSlide={handleLessonSlideChange}
-                          showDrawing={showDrawing}
-                          readOnly={!!lessonState.session.isFrozen}
-                          onDrawingChange={showDrawing ? handleDrawingChange : undefined}
-                          sceneData={lessonState.slideResponseConfig?.sceneData}
-                          onDrawingTextChange={(text) => {
-                            const slideId = lessonState.currentSlideId;
-                            if (!slideId) return;
-                            setLessonDrawingTextBySlide((prev) => {
-                              if ((prev[slideId] || "") === (text || "")) return prev;
-                              return { ...prev, [slideId]: text };
-                            });
-                          }}
-                        />
+                        <div className="h-full w-full">
+                          {(lessonState.session.timerRunning || lessonState.session.timerRemainingSec) && (
+                            <div className="px-4 pt-3 text-xs text-zinc-500">
+                              Timer: {formatTime(remainingSeconds)}
+                            </div>
+                          )}
+                          <LessonStage
+                            lessonId={lessonState.lesson.id}
+                            slideFilename={slideFilename}
+                            cacheKey={slideCacheKey}
+                            currentSlideIndex={lessonState.currentSlideIndex}
+                            slideCount={lessonState.lesson.pageCount || lessonState.slides.length || 1}
+                            sessionMode={lessonState.session.mode}
+                            onChangeSlide={handleLessonSlideChange}
+                            showDrawing={showDrawing}
+                            readOnly={!!lessonState.session.isFrozen}
+                            onDrawingChange={showDrawing ? handleDrawingChange : undefined}
+                            sceneData={lessonState.slideResponseConfig?.sceneData}
+                            onDrawingTextChange={(text) => {
+                              const slideId = lessonState.currentSlideId;
+                              if (!slideId) return;
+                              setLessonDrawingTextBySlide((prev) => {
+                                if ((prev[slideId] || "") === (text || "")) return prev;
+                                return { ...prev, [slideId]: text };
+                              });
+                            }}
+                          />
+                        </div>
                       );
                   })()
                 ) : (
