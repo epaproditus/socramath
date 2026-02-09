@@ -355,14 +355,14 @@ export default function TeacherHeatmap() {
             <div className="mt-4 flex-1 min-h-0">
               <div className="h-full rounded-xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
                 <div className="text-xs font-semibold uppercase text-zinc-500">Drawing</div>
-                <div className="mt-2 flex-1 min-h-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+                <div className="mt-2 flex-1 min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-white">
                   {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath ? (
                     <img
                       src={`${responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}?v=${encodeURIComponent(
                         responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
                       )}`}
                       alt="Student drawing"
-                      className="h-full w-full object-contain"
+                      className="w-full h-auto object-contain"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-zinc-500">
