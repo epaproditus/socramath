@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
+import { emitRealtime } from "@/lib/realtime";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
@@ -72,5 +73,6 @@ export async function POST(req: Request) {
     console.warn("lesson-drawing upsert skipped (readonly db)");
   }
 
+  emitRealtime("lesson:update", { sessionId, lessonId: slide.lessonId, source: "lesson-drawing" });
   return Response.json({ drawingPath: publicPath });
 }

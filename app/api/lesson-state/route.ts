@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
+import { emitRealtime } from "@/lib/realtime";
 
 
 export async function GET() {
@@ -240,5 +241,6 @@ export async function POST(req: Request) {
     console.warn("lesson-state upsert skipped (readonly db)");
   }
 
+  emitRealtime("lesson:update", { sessionId, lessonId: lessonSession.lessonId, source: "lesson-state" });
   return new Response("OK");
 }

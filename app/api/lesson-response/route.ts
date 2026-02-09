@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
+import { emitRealtime } from "@/lib/realtime";
 
 
 export async function GET(req: Request) {
@@ -95,5 +96,6 @@ export async function POST(req: Request) {
     },
   });
 
+  emitRealtime("lesson:update", { sessionId, source: "lesson-response" });
   return new Response("OK");
 }
