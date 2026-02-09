@@ -54,6 +54,7 @@ export default function TeacherHeatmap() {
   const [studentSlideIndex, setStudentSlideIndex] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [socketError, setSocketError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const paceInitRef = useRef(false);
 
@@ -86,9 +87,14 @@ export default function TeacherHeatmap() {
     socket.emit("join", { lessonId: data.lesson.id, sessionId: data.session.id });
     const handleConnect = () => {
       setSocketConnected(true);
+      setSocketError(null);
       socket.emit("join", { lessonId: data.lesson.id, sessionId: data.session.id });
     };
     const handleDisconnect = () => setSocketConnected(false);
+    const handleConnectError = (err: Error) => {
+      setSocketConnected(false);
+      setSocketError(err?.message || "Connection error");
+    };
     const handleUpdate = (payload: { lessonId?: string; sessionId?: string }) => {
       if (payload.sessionId && payload.sessionId !== data.session.id) return;
       if (payload.lessonId && payload.lessonId !== data.lesson.id) return;
@@ -96,10 +102,12 @@ export default function TeacherHeatmap() {
     };
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
     socket.on("lesson:update", handleUpdate);
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
       socket.off("lesson:update", handleUpdate);
     };
   }, [data?.lesson?.id, data?.session?.id, load]);
@@ -308,6 +316,9 @@ export default function TeacherHeatmap() {
           Last update: {lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString() : "—"}
         </div>
       </div>
+      {socketError && (
+        <div className="text-xs text-zinc-400">Live error: {socketError}</div>
+      )}
       {data.session.timerRunning || data.session.timerRemainingSec ? (
         <div className="text-xs text-zinc-500">Timer: {formatTime(remainingSeconds)}</div>
       ) : null}
@@ -450,7 +461,6 @@ export default function TeacherHeatmap() {
                   className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
                   onWheel={(e) => {
                     if (!e.ctrlKey && !e.metaKey) return;
-                    e.preventDefault();
                     const delta = e.deltaY > 0 ? -0.1 : 0.1;
                     setZoom((z) =>
                       Math.min(3, Math.max(0.5, Math.round((z + delta) * 10) / 10))
@@ -652,7 +662,6 @@ export default function TeacherHeatmap() {
                   className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
                   onWheel={(e) => {
                     if (!e.ctrlKey && !e.metaKey) return;
-                    e.preventDefault();
                     const delta = e.deltaY > 0 ? -0.1 : 0.1;
                     setZoom((z) =>
                       Math.min(3, Math.max(0.5, Math.round((z + delta) * 10) / 10))
