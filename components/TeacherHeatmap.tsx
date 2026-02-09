@@ -126,9 +126,8 @@ export default function TeacherHeatmap() {
             </div>
           ))}
           {students.map((student) => (
-            <>
+            <div key={student.id} className="contents">
               <div
-                key={student.id}
                 className="sticky left-0 z-10 flex items-center border-t border-zinc-100 bg-white px-2 py-2 text-xs text-zinc-600"
               >
                 {hideNames ? `Student ${student.id.slice(0, 4)}` : student.name}
@@ -151,7 +150,7 @@ export default function TeacherHeatmap() {
                   />
                 );
               })}
-            </>
+            </div>
           ))}
         </div>
       </div>
