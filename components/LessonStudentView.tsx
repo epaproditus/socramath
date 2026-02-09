@@ -12,6 +12,7 @@ type LessonState = {
     mode: "instructor" | "student";
     currentSlideIndex: number;
     isFrozen?: boolean;
+    paceConfig?: { allowedSlides?: number[] } | null;
     timerEndsAt?: string | null;
     timerRemainingSec?: number | null;
     timerRunning?: boolean;
@@ -64,6 +65,22 @@ export default function LessonStudentView() {
     return `${String(currentSlideIndex).padStart(digits, "0")}.png`;
   }, [currentSlideIndex, slideCount]);
 
+  const allowedSlides = useMemo(() => {
+    const allowed = state?.session?.paceConfig?.allowedSlides;
+    if (!Array.isArray(allowed) || !allowed.length) return null;
+    return Array.from(new Set(allowed)).filter((idx) => typeof idx === "number").sort((a, b) => a - b);
+  }, [state?.session?.paceConfig]);
+
+  const nextAllowed = useMemo(() => {
+    if (!allowedSlides?.length) return null;
+    return allowedSlides.find((idx) => idx > currentSlideIndex) ?? null;
+  }, [allowedSlides, currentSlideIndex]);
+
+  const prevAllowed = useMemo(() => {
+    if (!allowedSlides?.length) return null;
+    return [...allowedSlides].reverse().find((idx) => idx < currentSlideIndex) ?? null;
+  }, [allowedSlides, currentSlideIndex]);
+
   const loadState = async () => {
     setLoading(true);
     try {
@@ -95,13 +112,16 @@ export default function LessonStudentView() {
 
   useEffect(() => {
     if (!state) return;
-    const shouldPoll = state.session.mode === "instructor" || !!state.session.timerRunning;
+    const shouldPoll =
+      state.session.mode === "instructor" ||
+      !!state.session.timerRunning ||
+      !!state.session.isFrozen;
     if (!shouldPoll) return;
     const interval = setInterval(() => {
       loadState();
     }, 2000);
     return () => clearInterval(interval);
-  }, [state?.session.mode, state?.session.timerRunning]);
+  }, [state?.session.mode, state?.session.timerRunning, state?.session.isFrozen]);
 
   useEffect(() => {
     if (!state?.session?.timerRunning) return;
@@ -113,13 +133,22 @@ export default function LessonStudentView() {
 
   const updateStudentSlide = async (index: number) => {
     if (!state) return;
-    const clamped = Math.max(1, Math.min(index, slideCount));
+    let targetIndex = index;
+    if (allowedSlides && allowedSlides.length && !allowedSlides.includes(index)) {
+      const direction = index > currentSlideIndex ? 1 : -1;
+      targetIndex = direction > 0 ? nextAllowed ?? currentSlideIndex : prevAllowed ?? currentSlideIndex;
+      if (targetIndex === currentSlideIndex) return;
+    }
+    const clamped = Math.max(1, Math.min(targetIndex, slideCount));
     setState({ ...state, currentSlideIndex: clamped });
-    await fetch("/api/lesson-state", {
+    const res = await fetch("/api/lesson-state", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: state.session.id, currentSlideIndex: clamped }),
     });
+    if (!res.ok) {
+      await loadState();
+    }
   };
 
   const submitResponse = async () => {
@@ -224,7 +253,10 @@ export default function LessonStudentView() {
                   onClick={() =>
                     state?.session.mode === "student" && updateStudentSlide(currentSlideIndex - 1)
                   }
-                  disabled={state?.session.mode !== "student"}
+                  disabled={
+                    state?.session.mode !== "student" ||
+                    (allowedSlides && prevAllowed === null)
+                  }
                   className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs disabled:opacity-40"
                 >
                   <ChevronLeft className="h-3 w-3" /> Prev
@@ -233,7 +265,10 @@ export default function LessonStudentView() {
                   onClick={() =>
                     state?.session.mode === "student" && updateStudentSlide(currentSlideIndex + 1)
                   }
-                  disabled={state?.session.mode !== "student"}
+                  disabled={
+                    state?.session.mode !== "student" ||
+                    (allowedSlides && nextAllowed === null)
+                  }
                   className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs disabled:opacity-40"
                 >
                   Next <ChevronRight className="h-3 w-3" />

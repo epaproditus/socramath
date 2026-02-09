@@ -206,9 +206,22 @@ export default function Home() {
     const allowed = Array.isArray(lessonState.session?.paceConfig?.allowedSlides)
       ? lessonState.session.paceConfig.allowedSlides
       : null;
-    if (allowed && allowed.length && !allowed.includes(nextIndex)) return;
+    let targetIndex = nextIndex;
+    if (allowed && allowed.length && !allowed.includes(nextIndex)) {
+      const sorted = Array.from(new Set(allowed)).sort((a, b) => a - b);
+      const direction = nextIndex > lessonState.currentSlideIndex ? 1 : -1;
+      if (direction > 0) {
+        targetIndex =
+          sorted.find((idx) => idx > lessonState.currentSlideIndex) ??
+          lessonState.currentSlideIndex;
+      } else {
+        const prev = [...sorted].reverse().find((idx) => idx < lessonState.currentSlideIndex);
+        targetIndex = prev ?? lessonState.currentSlideIndex;
+      }
+      if (targetIndex === lessonState.currentSlideIndex) return;
+    }
     const max = lessonState.lesson.pageCount || lessonState.slides.length || 1;
-    const clamped = Math.max(1, Math.min(nextIndex, max));
+    const clamped = Math.max(1, Math.min(targetIndex, max));
     setLessonState({ ...lessonState, currentSlideIndex: clamped });
     await fetch("/api/lesson-state", {
       method: "POST",
@@ -290,13 +303,21 @@ export default function Home() {
 
   useEffect(() => {
     if (!lessonState || activeExperienceRef.current !== "lesson") return;
-    const shouldPoll = lessonState.session.mode === "instructor" || !!lessonState.session.timerRunning;
+    const shouldPoll =
+      lessonState.session.mode === "instructor" ||
+      !!lessonState.session.timerRunning ||
+      !!lessonState.session.isFrozen;
     if (!shouldPoll) return;
     const interval = setInterval(() => {
       loadLessonState();
     }, 2000);
     return () => clearInterval(interval);
-  }, [lessonState?.session.id, lessonState?.session.mode, lessonState?.session.timerRunning]);
+  }, [
+    lessonState?.session.id,
+    lessonState?.session.mode,
+    lessonState?.session.timerRunning,
+    lessonState?.session.isFrozen,
+  ]);
 
   useEffect(() => {
     if (!lessonState?.session?.timerRunning) return;
