@@ -42,6 +42,16 @@ export default function TeacherHeatmap() {
     slideId: string;
     slideIndex: number;
   } | null>(null);
+  const [selectedSlide, setSelectedSlide] = useState<{
+    slideId: string;
+    slideIndex: number;
+  } | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<{
+    studentId: string;
+    studentName: string;
+    slideIndex: number;
+  } | null>(null);
+  const [studentSlideIndex, setStudentSlideIndex] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const [socketConnected, setSocketConnected] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -178,6 +188,11 @@ export default function TeacherHeatmap() {
     }
   }, [selectedCell?.studentId, selectedCell?.slideId]);
 
+  useEffect(() => {
+    if (!selectedStudent) return;
+    setZoom(1);
+  }, [selectedStudent?.studentId, selectedStudent?.slideIndex]);
+
   const students = useMemo(() => {
     if (!data?.students) return [];
     const sorted = [...data.students];
@@ -301,17 +316,36 @@ export default function TeacherHeatmap() {
         <div className="grid" style={{ gridTemplateColumns: `220px repeat(${slides.length}, 84px)` }}>
           <div className="sticky left-0 z-10 bg-white" />
           {slides.map((slide) => (
-            <div key={slide.id} className="text-center text-[11px] text-zinc-500">
+            <button
+              key={slide.id}
+              className="text-center text-[11px] text-zinc-500 hover:text-zinc-800"
+              onClick={() => {
+                setSelectedCell(null);
+                setSelectedStudent(null);
+                setSelectedSlide({ slideId: slide.id, slideIndex: slide.index });
+              }}
+            >
               {slide.index}
-            </div>
+            </button>
           ))}
           {students.map((student) => (
             <div key={student.id} className="contents">
-              <div
-                className="sticky left-0 z-10 flex items-center border-t border-zinc-100 bg-white px-2 py-2 text-xs text-zinc-600"
+              <button
+                className="sticky left-0 z-10 flex items-center border-t border-zinc-100 bg-white px-2 py-2 text-xs text-zinc-600 hover:text-zinc-900"
+                onClick={() => {
+                  const current = studentSlideMap.get(student.id) ?? data?.session.currentSlideIndex ?? 1;
+                  setSelectedCell(null);
+                  setSelectedSlide(null);
+                  setSelectedStudent({
+                    studentId: student.id,
+                    studentName: student.name,
+                    slideIndex: current,
+                  });
+                  setStudentSlideIndex(current);
+                }}
               >
                 {hideNames ? `Student ${student.id.slice(0, 4)}` : student.name}
-              </div>
+              </button>
               {slides.map((slide) => {
                 const cell = responsesMap.get(`${student.id}:${slide.id}`);
                 const hasResponse = !!cell?.response || !!cell?.drawingPath;
@@ -332,14 +366,16 @@ export default function TeacherHeatmap() {
                     key={`${student.id}-${slide.id}`}
                     className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer ${isActiveSlide ? "ring-2 ring-sky-500 ring-inset" : ""}`}
                     title={cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response"}
-                    onClick={() =>
+                    onClick={() => {
+                      setSelectedSlide(null);
+                      setSelectedStudent(null);
                       setSelectedCell({
                         studentId: student.id,
                         studentName: student.name,
                         slideId: slide.id,
                         slideIndex: slide.index,
-                      })
-                    }
+                      });
+                    }}
                   />
                 );
               })}
@@ -442,6 +478,213 @@ export default function TeacherHeatmap() {
                       No drawing yet.
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 text-xs text-zinc-500">
+              Live updates are enabled while this modal is open.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedSlide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="h-[92vh] w-[92vw] max-w-[1600px] rounded-2xl bg-white p-6 shadow-xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-sm text-zinc-500">
+                <span className="font-semibold text-zinc-700">Heatmap</span>
+                <span>›</span>
+                <span className="font-semibold text-zinc-700">Problem {selectedSlide.slideIndex}</span>
+              </div>
+              <button className="text-zinc-400" onClick={() => setSelectedSlide(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 flex-1 min-h-0 grid gap-5 lg:grid-cols-[300px_1fr]">
+              <aside className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm flex flex-col">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Problem {selectedSlide.slideIndex}</div>
+                <div className="mt-3 flex-1 overflow-auto">
+                  {data?.lesson?.id ? (
+                    (() => {
+                      const digits = String(data.lesson.pageCount || slides.length || 1).length;
+                      const thumbFilename = `${String(selectedSlide.slideIndex).padStart(digits, "0")}.png`;
+                      return (
+                        <img
+                          src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}?v=${encodeURIComponent(
+                            selectedSlide.slideId
+                          )}`}
+                          alt={`Problem ${selectedSlide.slideIndex}`}
+                          className="w-full rounded-xl border border-zinc-200 object-contain bg-zinc-50"
+                        />
+                      );
+                    })()
+                  ) : (
+                    <div className="text-sm text-zinc-500">No slide available.</div>
+                  )}
+                </div>
+              </aside>
+              <div className="h-full rounded-2xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Students</div>
+                <div className="mt-3 flex-1 min-h-0 overflow-auto">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {students.map((student) => {
+                      const cell = responsesMap.get(`${student.id}:${selectedSlide.slideId}`);
+                      const drawingPath = cell?.drawingPath || "";
+                      return (
+                        <button
+                          key={`slide-${selectedSlide.slideId}-${student.id}`}
+                          className="rounded-xl border border-zinc-200 bg-white p-3 text-left hover:border-zinc-300"
+                          onClick={() => {
+                            setSelectedSlide(null);
+                            setSelectedStudent({
+                              studentId: student.id,
+                              studentName: student.name,
+                              slideIndex: selectedSlide.slideIndex,
+                            });
+                            setStudentSlideIndex(selectedSlide.slideIndex);
+                          }}
+                        >
+                          <div className="text-xs font-semibold text-zinc-600">{student.name}</div>
+                          <div className="mt-2 h-40 rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden">
+                            {drawingPath ? (
+                              <img
+                                src={`${drawingPath}?v=${encodeURIComponent(cell?.updatedAt || "")}`}
+                                alt={`${student.name} work`}
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-xs text-zinc-400">
+                                No work yet
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 text-xs text-zinc-500">
+              Click a student to open their full view.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedStudent && studentSlideIndex !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="h-[92vh] w-[92vw] max-w-[1600px] rounded-2xl bg-white p-6 shadow-xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-sm text-zinc-500">
+                <span className="font-semibold text-zinc-700">Heatmap</span>
+                <span>›</span>
+                <span className="font-semibold text-zinc-700">{selectedStudent.studentName}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+                >
+                  −
+                </button>
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => setZoom(1)}
+                >
+                  Reset
+                </button>
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))}
+                >
+                  +
+                </button>
+                <button className="text-zinc-400" onClick={() => setSelectedStudent(null)}>
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex-1 min-h-0 grid gap-5 lg:grid-cols-[300px_1fr]">
+              <aside className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm flex flex-col min-h-0">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Problems</div>
+                <div className="mt-3 flex-1 overflow-auto space-y-3">
+                  {slides.map((slide) => {
+                    const isActive = slide.index === studentSlideIndex;
+                    const cell = responsesMap.get(`${selectedStudent.studentId}:${slide.id}`);
+                    const drawingPath = cell?.drawingPath || "";
+                    return (
+                      <button
+                        key={`student-${selectedStudent.studentId}-${slide.id}`}
+                        className={`w-full rounded-xl border p-2 text-left ${
+                          isActive ? "border-sky-400 bg-sky-50" : "border-zinc-200 hover:border-zinc-300"
+                        }`}
+                        onClick={() => setStudentSlideIndex(slide.index)}
+                      >
+                        <div className="text-xs font-semibold text-zinc-600">Problem {slide.index}</div>
+                        <div className="mt-2 h-24 rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden">
+                          {drawingPath ? (
+                            <img
+                              src={`${drawingPath}?v=${encodeURIComponent(cell?.updatedAt || "")}`}
+                              alt={`Problem ${slide.index}`}
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[11px] text-zinc-400">
+                              No work
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </aside>
+
+              <div className="h-full rounded-2xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
+                <div className="text-xs font-semibold uppercase text-zinc-500">
+                  Live Work · Problem {studentSlideIndex}
+                </div>
+                <div
+                  className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
+                  onWheel={(e) => {
+                    if (!e.ctrlKey && !e.metaKey) return;
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    setZoom((z) =>
+                      Math.min(3, Math.max(0.5, Math.round((z + delta) * 10) / 10))
+                    );
+                  }}
+                >
+                  {(() => {
+                    const slide = slides.find((s) => s.index === studentSlideIndex);
+                    const cell = slide
+                      ? responsesMap.get(`${selectedStudent.studentId}:${slide.id}`)
+                      : undefined;
+                    const drawingPath = cell?.drawingPath || "";
+                    return drawingPath ? (
+                      <div
+                        className="h-full w-full"
+                        style={{
+                          transform: `scale(${zoom})`,
+                          transformOrigin: "top left",
+                        }}
+                      >
+                        <img
+                          src={`${drawingPath}?v=${encodeURIComponent(cell?.updatedAt || "")}`}
+                          alt="Student drawing"
+                          className="h-full w-auto object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                        No drawing yet.
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
