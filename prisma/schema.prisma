@@ -29,6 +29,7 @@ model User {
   studentResponses StudentResponse[]
   sessionLocks  StudentSessionLock[]
   sessionStates StudentSessionState[]
+  classes       Class[]
 }
 
 model Account {
@@ -195,6 +196,7 @@ model LessonSlide {
 model LessonSession {
   id                String   @id @default(cuid())
   lessonId          String
+  classId           String?
   mode              String   @default("instructor") // instructor | student
   currentSlideIndex Int      @default(1)
   isActive          Boolean  @default(true)
@@ -207,8 +209,22 @@ model LessonSession {
   updatedAt         DateTime @updatedAt
 
   lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  class  Class? @relation(fields: [classId], references: [id], onDelete: Cascade)
   states LessonSessionState[]
   responses LessonResponse[]
+}
+
+model Class {
+  id        String   @id @default(cuid())
+  name      String
+  period    String?
+  joinCode  String   @unique
+  teacherId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teacher  User            @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  sessions LessonSession[]
 }
 
 model LessonSessionState {
