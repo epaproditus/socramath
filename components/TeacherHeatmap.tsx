@@ -18,6 +18,7 @@ type HeatmapPayload = {
   };
   slides: { id: string; index: number }[];
   students: { id: string; name: string; email?: string | null }[];
+  states?: { userId: string; currentSlideIndex: number }[];
   responses: { key: string; response: string; drawingPath: string; updatedAt: string }[];
 };
 
@@ -150,6 +151,14 @@ export default function TeacherHeatmap() {
     return map;
   }, [data?.responses]);
 
+  const studentSlideMap = useMemo(() => {
+    const map = new Map<string, number>();
+    data?.states?.forEach((state) => {
+      map.set(state.userId, state.currentSlideIndex);
+    });
+    return map;
+  }, [data?.states]);
+
   const students = useMemo(() => {
     if (!data?.students) return [];
     const sorted = [...data.students];
@@ -274,6 +283,11 @@ export default function TeacherHeatmap() {
               {slides.map((slide) => {
                 const cell = responsesMap.get(`${student.id}:${slide.id}`);
                 const hasResponse = !!cell?.response || !!cell?.drawingPath;
+                const studentSlideIndex =
+                  data?.session.mode === "student"
+                    ? studentSlideMap.get(student.id)
+                    : data?.session.currentSlideIndex;
+                const isActiveSlide = studentSlideIndex === slide.index;
                 const color = flatMode
                   ? hasResponse
                     ? "bg-blue-100"
@@ -284,7 +298,7 @@ export default function TeacherHeatmap() {
                 return (
                   <div
                     key={`${student.id}-${slide.id}`}
-                    className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer`}
+                    className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer ${isActiveSlide ? "ring-2 ring-sky-500 ring-inset" : ""}`}
                     title={cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response"}
                     onClick={() =>
                       setSelectedCell({

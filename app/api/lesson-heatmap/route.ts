@@ -39,6 +39,11 @@ export async function GET() {
     orderBy: { updatedAt: "desc" },
   });
 
+  const states = await prisma.lessonSessionState.findMany({
+    where: { sessionId: lessonSession.id },
+    include: { user: true },
+  });
+
   const studentsMap = new Map<string, { id: string; name: string; email?: string | null }>();
   for (const response of responses) {
     const name = response.user?.name || response.user?.email || "Student";
@@ -46,6 +51,14 @@ export async function GET() {
       id: response.userId,
       name,
       email: response.user?.email,
+    });
+  }
+  for (const state of states) {
+    const name = state.user?.name || state.user?.email || "Student";
+    studentsMap.set(state.userId, {
+      id: state.userId,
+      name,
+      email: state.user?.email,
     });
   }
 
@@ -84,6 +97,10 @@ export async function GET() {
     },
     slides,
     students,
+    states: states.map((state) => ({
+      userId: state.userId,
+      currentSlideIndex: state.currentSlideIndex,
+    })),
     responses: Array.from(cellMap.entries()).map(([key, value]) => ({
       key,
       ...value,

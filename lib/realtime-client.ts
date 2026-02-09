@@ -7,7 +7,7 @@ export function getRealtimeSocket() {
   if (!socket) {
     socket = io({
       path: "/socket.io",
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
     });
   }
   return socket;
