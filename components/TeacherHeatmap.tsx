@@ -42,6 +42,7 @@ export default function TeacherHeatmap() {
     slideId: string;
     slideIndex: number;
   } | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [socketConnected, setSocketConnected] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const paceInitRef = useRef(false);
@@ -170,6 +171,12 @@ export default function TeacherHeatmap() {
     });
     return map;
   }, [data?.states]);
+
+  useEffect(() => {
+    if (selectedCell) {
+      setZoom(1);
+    }
+  }, [selectedCell?.studentId, selectedCell?.slideId]);
 
   const students = useMemo(() => {
     if (!data?.students) return [];
@@ -343,27 +350,65 @@ export default function TeacherHeatmap() {
 
       {selectedCell && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="h-[74vh] w-[86vw] max-w-[1200px] rounded-2xl bg-white p-6 shadow-xl flex flex-col overflow-hidden">
+          <div className="h-[92vh] w-[92vw] max-w-[1600px] rounded-2xl bg-white p-6 shadow-xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="text-lg font-semibold">
                 {selectedCell.studentName} · Problem {selectedCell.slideIndex}
               </div>
-              <button className="text-zinc-400" onClick={() => setSelectedCell(null)}>
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+                >
+                  −
+                </button>
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => setZoom(1)}
+                >
+                  Reset
+                </button>
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))}
+                >
+                  +
+                </button>
+                <button className="text-zinc-400" onClick={() => setSelectedCell(null)}>
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="mt-4 flex-1 min-h-0">
               <div className="h-full rounded-xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
                 <div className="text-xs font-semibold uppercase text-zinc-500">Drawing</div>
-                <div className="mt-2 flex-1 min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-white">
+                <div
+                  className="mt-2 flex-1 min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-white"
+                  onWheel={(e) => {
+                    if (!e.ctrlKey && !e.metaKey) return;
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    setZoom((z) =>
+                      Math.min(3, Math.max(0.5, Math.round((z + delta) * 10) / 10))
+                    );
+                  }}
+                >
                   {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath ? (
-                    <img
-                      src={`${responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}?v=${encodeURIComponent(
-                        responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
-                      )}`}
-                      alt="Student drawing"
-                      className="h-full w-auto object-contain"
-                    />
+                    <div
+                      className="h-full w-full"
+                      style={{
+                        transform: `scale(${zoom})`,
+                        transformOrigin: "top left",
+                      }}
+                    >
+                      <img
+                        src={`${responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}?v=${encodeURIComponent(
+                          responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
+                        )}`}
+                        alt="Student drawing"
+                        className="h-full w-auto object-contain"
+                      />
+                    </div>
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-zinc-500">
                       No drawing yet.
