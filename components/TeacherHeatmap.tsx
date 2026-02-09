@@ -363,7 +363,9 @@ export default function TeacherHeatmap() {
                 <div className="text-xs font-semibold uppercase text-zinc-500">Drawing</div>
                 {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath ? (
                   <img
-                    src={responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}
+                    src={`${responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}?v=${encodeURIComponent(
+                      responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
+                    )}`}
                     alt="Student drawing"
                     className="mt-2 h-60 w-full rounded-lg border border-zinc-200 object-contain bg-white"
                   />
