@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, MessageSquareText, Presentation } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquareText, Presentation, Snowflake } from "lucide-react";
 import { Assistant } from "@/app/assistant";
 
 type Slide = { id: string; index: number };
@@ -250,7 +250,15 @@ export default function LessonStudentView() {
                     }}
                   />
                   {state?.session?.isFrozen && (
-                    <div className="absolute inset-0 rounded-lg bg-zinc-900/25 backdrop-blur-[1px]" />
+                    <div className="absolute inset-0 rounded-lg bg-sky-900/35 backdrop-blur-sm">
+                      <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-white/30 via-white/10 to-sky-200/10" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="flex items-center gap-2 rounded-full border border-sky-200/70 bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-lg">
+                          <Snowflake className="h-4 w-4" />
+                          Frozen
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               ) : (
