@@ -161,8 +161,20 @@ export default function TeacherHeatmap() {
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-zinc-700">Heatmap</div>
         <div className="flex items-center gap-2">
-          <button className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs">Live Activity</button>
-          <button className="rounded-full border border-zinc-200 p-2" title="Help queue">
+          <button
+            className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-400 opacity-60"
+            disabled
+            aria-disabled
+            title="Live Activity (coming soon)"
+          >
+            Live Activity
+          </button>
+          <button
+            className="rounded-full border border-zinc-200 p-2 text-zinc-400 opacity-60"
+            disabled
+            aria-disabled
+            title="Help queue (coming soon)"
+          >
             <Hand className="h-4 w-4" />
           </button>
           <button className="rounded-full border border-zinc-200 p-2" title="Pace students" onClick={() => setPaceModal(true)}>
@@ -175,10 +187,20 @@ export default function TeacherHeatmap() {
           >
             <Snowflake className="h-4 w-4" />
           </button>
-          <button className="rounded-full border border-zinc-200 p-2" title="Download">
+          <button
+            className="rounded-full border border-zinc-200 p-2 text-zinc-400 opacity-60"
+            disabled
+            aria-disabled
+            title="Download (coming soon)"
+          >
             <Download className="h-4 w-4" />
           </button>
-          <button className="rounded-full border border-zinc-200 p-2" title="Compress view">
+          <button
+            className="rounded-full border border-zinc-200 p-2 text-zinc-400 opacity-60"
+            disabled
+            aria-disabled
+            title="Compress view (coming soon)"
+          >
             <Shrink className="h-4 w-4" />
           </button>
           <button
