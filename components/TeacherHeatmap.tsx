@@ -362,7 +362,7 @@ export default function TeacherHeatmap() {
                         responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
                       )}`}
                       alt="Student drawing"
-                      className="w-full h-auto object-contain"
+                      className="h-full w-auto object-contain"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-zinc-500">
