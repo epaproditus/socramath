@@ -56,6 +56,10 @@ export default function TeacherHeatmap() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketError, setSocketError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [slideSummary, setSlideSummary] = useState<string | null>(null);
+  const [studentSummary, setStudentSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState<"slide" | "student" | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const paceInitRef = useRef(false);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
@@ -139,6 +143,30 @@ export default function TeacherHeatmap() {
     }
   };
 
+  const fetchSummary = async (payload: { slideId?: string; studentId?: string }) => {
+    if (!data?.session.id) return;
+    setSummaryError(null);
+    setSummaryLoading(payload.slideId ? "slide" : "student");
+    try {
+      const res = await fetch("/api/lesson-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: data.session.id, ...payload }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      if (payload.slideId) {
+        setSlideSummary(json.summary || "");
+      } else {
+        setStudentSummary(json.summary || "");
+      }
+    } catch (err: any) {
+      setSummaryError(err?.message || "Failed to summarize");
+    } finally {
+      setSummaryLoading(null);
+    }
+  };
+
   const remainingSeconds = useMemo(() => {
     if (!data?.session) return 0;
     if (data.session.timerRunning && data.session.timerEndsAt) {
@@ -200,6 +228,20 @@ export default function TeacherHeatmap() {
     if (!selectedStudent) return;
     setZoom(1);
   }, [selectedStudent?.studentId, selectedStudent?.slideIndex]);
+
+  useEffect(() => {
+    if (selectedSlide) {
+      setSlideSummary(null);
+      setSummaryError(null);
+    }
+  }, [selectedSlide?.slideId]);
+
+  useEffect(() => {
+    if (selectedStudent) {
+      setStudentSummary(null);
+      setSummaryError(null);
+    }
+  }, [selectedStudent?.studentId]);
 
   const students = useMemo(() => {
     if (!data?.students) return [];
@@ -508,9 +550,18 @@ export default function TeacherHeatmap() {
                 <span>›</span>
                 <span className="font-semibold text-zinc-700">Problem {selectedSlide.slideIndex}</span>
               </div>
-              <button className="text-zinc-400" onClick={() => setSelectedSlide(null)}>
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => fetchSummary({ slideId: selectedSlide.slideId })}
+                  disabled={summaryLoading === "slide"}
+                >
+                  {summaryLoading === "slide" ? "Summarizing..." : "Summarize"}
+                </button>
+                <button className="text-zinc-400" onClick={() => setSelectedSlide(null)}>
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="mt-4 flex-1 min-h-0 grid gap-5 lg:grid-cols-[300px_1fr]">
               <aside className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm flex flex-col">
@@ -536,7 +587,17 @@ export default function TeacherHeatmap() {
                 </div>
               </aside>
               <div className="h-full rounded-2xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
-                <div className="text-xs font-semibold uppercase text-zinc-500">Students</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold uppercase text-zinc-500">Students</div>
+                </div>
+                {slideSummary && (
+                  <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm text-zinc-700 whitespace-pre-wrap">
+                    {slideSummary}
+                  </div>
+                )}
+                {summaryError && (
+                  <div className="mt-2 text-xs text-red-500">{summaryError}</div>
+                )}
                 <div className="mt-3 flex-1 min-h-0 overflow-auto">
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {students.map((student) => {
@@ -594,6 +655,13 @@ export default function TeacherHeatmap() {
                 <span className="font-semibold text-zinc-700">{selectedStudent.studentName}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => fetchSummary({ studentId: selectedStudent.studentId })}
+                  disabled={summaryLoading === "student"}
+                >
+                  {summaryLoading === "student" ? "Summarizing..." : "Summarize"}
+                </button>
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
@@ -658,6 +726,14 @@ export default function TeacherHeatmap() {
                 <div className="text-xs font-semibold uppercase text-zinc-500">
                   Live Work · Problem {studentSlideIndex}
                 </div>
+                {studentSummary && (
+                  <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm text-zinc-700 whitespace-pre-wrap">
+                    {studentSummary}
+                  </div>
+                )}
+                {summaryError && (
+                  <div className="mt-2 text-xs text-red-500">{summaryError}</div>
+                )}
                 <div
                   className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
                   onWheel={(e) => {
