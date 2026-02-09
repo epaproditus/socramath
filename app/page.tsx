@@ -910,6 +910,21 @@ export default function Home() {
         <AssistantRuntimeProvider runtime={runtime}>
           {activeExperience === "lesson" ? (
             <>
+              {(lessonState?.session?.timerRunning || lessonState?.session?.timerRemainingSec) && (
+                <div className="pointer-events-none fixed bottom-4 right-4 z-[60]">
+                  <div
+                    className={`rounded-full border px-5 py-3 text-xl font-bold shadow-lg ${
+                      remainingSeconds <= 10
+                        ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
+                        : remainingSeconds <= 30
+                        ? "border-amber-300 bg-amber-100 text-amber-700 animate-pulse"
+                        : "border-zinc-200 bg-white text-zinc-700"
+                    }`}
+                  >
+                    {formatTime(remainingSeconds)}
+                  </div>
+                </div>
+              )}
               <div className="flex-1 min-w-0 min-h-0 bg-white">
                 {lessonState ? (
                   (() => {
@@ -959,21 +974,6 @@ export default function Home() {
                 className={`relative border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
                 style={sidebarOpen ? { width: Math.max(420, sidebarWidth) } : undefined}
               >
-                {(lessonState?.session?.timerRunning || lessonState?.session?.timerRemainingSec) && (
-                  <div className="pointer-events-none absolute -left-5 top-3 z-40">
-                    <div
-                      className={`rounded-full border px-4 py-2 text-lg font-bold shadow-sm ${
-                        remainingSeconds <= 10
-                          ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
-                          : remainingSeconds <= 30
-                          ? "border-amber-300 bg-amber-100 text-amber-700 animate-pulse"
-                          : "border-zinc-200 bg-white text-zinc-700"
-                      }`}
-                    >
-                      {formatTime(remainingSeconds)}
-                    </div>
-                  </div>
-                )}
                 {sidebarOpen && (
                   <div className="relative h-full">
                     <div

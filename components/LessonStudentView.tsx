@@ -151,7 +151,22 @@ export default function LessonStudentView() {
 
   return (
     <div className="h-dvh w-full">
-      <div className="flex h-full flex-col">
+      <div className="flex h-full flex-col relative">
+        {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
+          <div className="pointer-events-none fixed bottom-4 right-4 z-50">
+            <div
+              className={`rounded-full border px-5 py-3 text-xl font-bold shadow-lg ${
+                remainingSeconds <= 10
+                  ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
+                  : remainingSeconds <= 30
+                  ? "border-amber-300 bg-amber-100 text-amber-700 animate-pulse"
+                  : "border-zinc-200 bg-white text-zinc-700"
+              }`}
+            >
+              {formatTime(remainingSeconds)}
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <div className="text-xs uppercase tracking-wide text-zinc-500">Lesson</div>
@@ -213,21 +228,6 @@ export default function LessonStudentView() {
                   Next <ChevronRight className="h-3 w-3" />
                 </button>
               </div>
-              {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
-                <div className="pointer-events-none absolute -left-5 top-2 z-20">
-                  <div
-                    className={`rounded-full border px-4 py-2 text-lg font-bold shadow-sm ${
-                      remainingSeconds <= 10
-                        ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
-                        : remainingSeconds <= 30
-                        ? "border-amber-300 bg-amber-100 text-amber-700 animate-pulse"
-                        : "border-zinc-200 bg-white text-zinc-700"
-                    }`}
-                  >
-                    {formatTime(remainingSeconds)}
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="flex-1 overflow-auto p-3">
