@@ -10,6 +10,7 @@ import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 import LessonStage from "@/components/LessonStage";
 import LessonChoiceWidget from "@/components/LessonChoiceWidget";
+import { getRealtimeSocket } from "@/lib/realtime-client";
 
 type LessonState = {
   lesson: {
@@ -254,6 +255,22 @@ export default function Home() {
   useEffect(() => {
     loadLessonState(true);
   }, []);
+
+  useEffect(() => {
+    if (!lessonState?.lesson?.id || !lessonState?.session?.id) return;
+    const socket = getRealtimeSocket();
+    if (!socket) return;
+    socket.emit("join", { lessonId: lessonState.lesson.id, sessionId: lessonState.session.id });
+    const handleUpdate = (payload: { lessonId?: string; sessionId?: string }) => {
+      if (payload.sessionId && payload.sessionId !== lessonState.session.id) return;
+      if (payload.lessonId && payload.lessonId !== lessonState.lesson.id) return;
+      loadLessonState();
+    };
+    socket.on("lesson:update", handleUpdate);
+    return () => {
+      socket.off("lesson:update", handleUpdate);
+    };
+  }, [lessonState?.lesson?.id, lessonState?.session?.id]);
 
   useEffect(() => {
     if (!lessonState?.session.id || !lessonState.currentSlideId) return;

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Filter, Hand, Snowflake, Download, Shrink, Glasses, CheckCircle2, List, Timer } from "lucide-react";
+import { getRealtimeSocket } from "@/lib/realtime-client";
 
 type HeatmapPayload = {
   lesson: { id: string; title: string; pageCount: number };
@@ -38,23 +39,40 @@ export default function TeacherHeatmap() {
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
 
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/lesson-heatmap");
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      setData(json);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load heatmap");
+    }
+  }, []);
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch("/api/lesson-heatmap");
-        if (!res.ok) throw new Error(await res.text());
-        const json = await res.json();
-        setData(json);
-      } catch (err: any) {
-        setError(err?.message || "Failed to load heatmap");
-      }
-    };
     load();
     const interval = setInterval(() => {
       if (!freeze) load();
     }, 3000);
     return () => clearInterval(interval);
-  }, [freeze]);
+  }, [freeze, load]);
+
+  useEffect(() => {
+    if (!data?.lesson?.id || !data?.session?.id) return;
+    const socket = getRealtimeSocket();
+    if (!socket) return;
+    socket.emit("join", { lessonId: data.lesson.id, sessionId: data.session.id });
+    const handleUpdate = (payload: { lessonId?: string; sessionId?: string }) => {
+      if (payload.sessionId && payload.sessionId !== data.session.id) return;
+      if (payload.lessonId && payload.lessonId !== data.lesson.id) return;
+      load();
+    };
+    socket.on("lesson:update", handleUpdate);
+    return () => {
+      socket.off("lesson:update", handleUpdate);
+    };
+  }, [data?.lesson?.id, data?.session?.id, load]);
 
   useEffect(() => {
     if (!paceModal) {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, MessageSquareText, Presentation } from "lucide-react";
 import { Assistant } from "@/app/assistant";
+import { getRealtimeSocket } from "@/lib/realtime-client";
 
 type Slide = { id: string; index: number };
 type LessonState = {
@@ -109,6 +110,22 @@ export default function LessonStudentView() {
   useEffect(() => {
     loadState();
   }, []);
+
+  useEffect(() => {
+    if (!state?.lesson?.id || !state?.session?.id) return;
+    const socket = getRealtimeSocket();
+    if (!socket) return;
+    socket.emit("join", { lessonId: state.lesson.id, sessionId: state.session.id });
+    const handleUpdate = (payload: { lessonId?: string; sessionId?: string }) => {
+      if (payload.sessionId && payload.sessionId !== state.session.id) return;
+      if (payload.lessonId && payload.lessonId !== state.lesson.id) return;
+      loadState();
+    };
+    socket.on("lesson:update", handleUpdate);
+    return () => {
+      socket.off("lesson:update", handleUpdate);
+    };
+  }, [state?.lesson?.id, state?.session?.id]);
 
   useEffect(() => {
     if (!state) return;
