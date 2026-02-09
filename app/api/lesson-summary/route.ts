@@ -43,6 +43,7 @@ export async function POST(req: Request) {
   const slideIndexMap = new Map(slides.map((s) => [s.id, s.index]));
 
   if (slideId) {
+    const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
     const responses = await prisma.lessonResponse.findMany({
       where: { sessionId, slideId },
       include: { user: true },
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     const textSamples = responses
       .filter((r) => r.response && r.response.trim())
       .slice(0, 12)
-      .map((r) => `- ${r.user?.name || r.user?.email || "Student"}: ${r.response?.slice(0, 240)}`);
+      .map((r) => `- Response: ${r.response?.slice(0, 240)}`);
 
     const drawingOnlyCount = responses.filter((r) => r.drawingPath && !(r.response || "").trim()).length;
     const textCount = responses.filter((r) => (r.response || "").trim()).length;
@@ -60,16 +61,21 @@ export async function POST(req: Request) {
 
     const system = `You summarize a class's progress on a single slide.
 Output 4-6 bullet points. Focus on common misconceptions, progress, and who might need help.
-Do not reveal final answers. Keep it concise and teacher-friendly.`;
+Do not reveal final answers. Do not include student names. If there's not enough data, say so plainly.
+Keep it concise and teacher-friendly.`;
 
     const user = [
       `Lesson: ${lessonSession.lesson.title}`,
       `Slide index: ${slideIndexMap.get(slideId) || "?"}`,
+      `Slide prompt: ${slide?.prompt ? slide.prompt.slice(0, 600) : "None"}`,
+      `Slide text: ${slide?.text ? slide.text.slice(0, 600) : "None"}`,
+      `Rubric: ${slide?.rubric ? slide.rubric.slice(0, 600) : "None"}`,
+      `Response type: ${slide?.responseType || "text"}`,
       `Total responses: ${total}`,
       `Text responses: ${textCount}`,
       `Drawing-only responses: ${drawingOnlyCount}`,
       `Sample responses:`,
-      ...(textSamples.length ? textSamples : ["- (No text responses yet)"])
+      ...(textSamples.length ? textSamples : ["- (No text responses yet)"]),
     ].join("\n");
 
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -112,7 +118,8 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
       .map((r) => {
         const idx = slideIndexMap.get(r.slideId) || r.slide?.index || "?";
         const text = (r.response || "").trim();
-        return `- Slide ${idx}: ${text ? text.slice(0, 200) : "(drawing only)"}`;
+        const prompt = r.slide?.prompt ? r.slide.prompt.slice(0, 200) : "No prompt";
+        return `- Slide ${idx} (prompt: ${prompt}): ${text ? text.slice(0, 200) : "(drawing only)"}`;
       });
 
     const system = `You summarize a single student's progress across multiple slides.
@@ -124,7 +131,7 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
       `Student: ${name}`,
       `Total responses: ${responses.length}`,
       `Recent responses:`,
-      ...(samples.length ? samples : ["- (No responses yet)"])
+      ...(samples.length ? samples : ["- (No responses yet)"]),
     ].join("\n");
 
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
