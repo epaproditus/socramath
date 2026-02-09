@@ -34,6 +34,8 @@ export default function TeacherHeatmap() {
   const [timerMinutes, setTimerMinutes] = useState("5");
   const [paceSelection, setPaceSelection] = useState<number[]>([]);
 
+  const slides = useMemo(() => data?.slides || [], [data?.slides]);
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -97,7 +99,6 @@ export default function TeacherHeatmap() {
     return map;
   }, [data?.responses]);
 
-  const slides = data?.slides || [];
   const students = useMemo(() => {
     if (!data?.students) return [];
     const sorted = [...data.students];
