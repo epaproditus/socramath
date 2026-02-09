@@ -974,6 +974,16 @@ export default function Home() {
                 className={`relative border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
                 style={sidebarOpen ? { width: Math.max(420, sidebarWidth) } : undefined}
               >
+                {lessonState?.session?.isFrozen && (
+                  <div className="absolute inset-0 z-40 rounded-none bg-sky-900/35 backdrop-blur-sm">
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-white/10 to-sky-200/10" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="flex items-center gap-2 rounded-full border border-sky-200/70 bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-lg">
+                        Frozen
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {sidebarOpen && (
                   <div className="relative h-full">
                     <div
