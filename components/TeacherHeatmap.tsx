@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Filter, Hand, Snowflake, Download, Shrink, Glasses, CheckCircle2, List, Timer } from "lucide-react";
 
 type HeatmapPayload = {
@@ -34,6 +34,7 @@ export default function TeacherHeatmap() {
   const [timerMinutes, setTimerMinutes] = useState("5");
   const [timerSeconds, setTimerSeconds] = useState("0");
   const [paceSelection, setPaceSelection] = useState<number[]>([]);
+  const paceInitRef = useRef(false);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
 
@@ -56,11 +57,17 @@ export default function TeacherHeatmap() {
   }, [freeze]);
 
   useEffect(() => {
-    if (paceModal && data?.session.paceConfig?.allowedSlides) {
+    if (!paceModal) {
+      paceInitRef.current = false;
+      return;
+    }
+    if (paceInitRef.current) return;
+    if (data?.session.paceConfig?.allowedSlides) {
       setPaceSelection([...data.session.paceConfig.allowedSlides]);
-    } else if (paceModal && !data?.session.paceConfig?.allowedSlides) {
+    } else {
       setPaceSelection(slides.map((slide) => slide.index));
     }
+    paceInitRef.current = true;
   }, [paceModal, data?.session.paceConfig, slides]);
 
   const updateSession = async (updates: Record<string, unknown>) => {
