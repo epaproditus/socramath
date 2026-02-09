@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import RichTextEditor from "@/components/RichTextEditor";
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
+import TeacherHeatmap from "@/components/TeacherHeatmap";
 
 type Slide = { id: string; index: number };
 type LessonSessionPayload = {
@@ -35,6 +36,7 @@ export default function LessonSessionDashboard() {
   const hydratedRef = useRef(false);
   const scratchTextTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [creatingSlide, setCreatingSlide] = useState(false);
+  const [activeTab, setActiveTab] = useState<"builder" | "heatmap">("builder");
   const [ocrRunning, setOcrRunning] = useState(false);
   const overlayRef = useRef<{ runOcr: () => Promise<void> } | null>(null);
 
@@ -292,8 +294,35 @@ export default function LessonSessionDashboard() {
       )}
 
       {data && (
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px] min-h-[calc(100vh-140px)]">
-          <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full flex flex-col">
+        <>
+          <div className="mb-4 flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-600 w-fit">
+            <button
+              onClick={() => setActiveTab("builder")}
+              className={`rounded-full px-3 py-1 ${
+                activeTab === "builder"
+                  ? "bg-amber-100 text-amber-700"
+                  : "text-zinc-600 hover:bg-zinc-100"
+              }`}
+            >
+              Builder
+            </button>
+            <button
+              onClick={() => setActiveTab("heatmap")}
+              className={`rounded-full px-3 py-1 ${
+                activeTab === "heatmap"
+                  ? "bg-blue-100 text-blue-700"
+                  : "text-zinc-600 hover:bg-zinc-100"
+              }`}
+            >
+              Heatmap
+            </button>
+          </div>
+
+          {activeTab === "heatmap" ? (
+            <TeacherHeatmap />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px] min-h-[calc(100vh-140px)]">
+              <aside className="rounded-2xl border border-zinc-200 bg-white p-2 h-full flex flex-col">
             <button
               onClick={createScratchSlide}
               disabled={creatingSlide}
@@ -588,8 +617,10 @@ export default function LessonSessionDashboard() {
                 </div>
               </div>
             )}
-          </aside>
-        </div>
+              </aside>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
