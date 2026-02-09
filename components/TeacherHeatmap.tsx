@@ -42,6 +42,8 @@ export default function TeacherHeatmap() {
     slideId: string;
     slideIndex: number;
   } | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const paceInitRef = useRef(false);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
@@ -52,6 +54,7 @@ export default function TeacherHeatmap() {
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
       setData(json);
+      setLastUpdatedAt(new Date());
     } catch (err: any) {
       setError(err?.message || "Failed to load heatmap");
     }
@@ -70,13 +73,22 @@ export default function TeacherHeatmap() {
     const socket = getRealtimeSocket();
     if (!socket) return;
     socket.emit("join", { lessonId: data.lesson.id, sessionId: data.session.id });
+    const handleConnect = () => {
+      setSocketConnected(true);
+      socket.emit("join", { lessonId: data.lesson.id, sessionId: data.session.id });
+    };
+    const handleDisconnect = () => setSocketConnected(false);
     const handleUpdate = (payload: { lessonId?: string; sessionId?: string }) => {
       if (payload.sessionId && payload.sessionId !== data.session.id) return;
       if (payload.lessonId && payload.lessonId !== data.lesson.id) return;
       load();
     };
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
     socket.on("lesson:update", handleUpdate);
     return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
       socket.off("lesson:update", handleUpdate);
     };
   }, [data?.lesson?.id, data?.session?.id, load]);
@@ -259,6 +271,19 @@ export default function TeacherHeatmap() {
           <button className="rounded-full border border-zinc-200 p-2" title="Sort students" onClick={() => setSortMode((v) => (v === "first" ? "last" : v === "last" ? "recent" : "first"))}>
             <List className="h-4 w-4" />
           </button>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-xs text-zinc-500">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex h-2 w-2 rounded-full ${
+              socketConnected ? "bg-emerald-400" : "bg-zinc-300"
+            }`}
+          />
+          {socketConnected ? "Live connected" : "Live disconnected"}
+        </div>
+        <div>
+          Last update: {lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString() : "—"}
         </div>
       </div>
       {data.session.timerRunning || data.session.timerRemainingSec ? (

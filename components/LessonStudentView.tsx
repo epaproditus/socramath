@@ -31,6 +31,7 @@ export default function LessonStudentView() {
   const [viewMode, setViewMode] = useState<"chat" | "slide">("chat");
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const prevFrozenRef = useRef(false);
+  const responseSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const slideCount = state?.lesson.pageCount || state?.slides.length || 1;
   const currentSlideIndex = state?.currentSlideIndex || 1;
@@ -210,6 +211,26 @@ export default function LessonStudentView() {
     setSaveMessage("Response saved.");
     setTimeout(() => setSaveMessage(null), 2000);
   };
+
+  useEffect(() => {
+    if (!state?.session.id || !currentSlideId) return;
+    if (!responseText.trim()) return;
+    if (responseSaveTimerRef.current) clearTimeout(responseSaveTimerRef.current);
+    responseSaveTimerRef.current = setTimeout(async () => {
+      await fetch("/api/lesson-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: state.session.id,
+          slideId: currentSlideId,
+          response: responseText,
+        }),
+      }).catch(() => {});
+    }, 700);
+    return () => {
+      if (responseSaveTimerRef.current) clearTimeout(responseSaveTimerRef.current);
+    };
+  }, [responseText, state?.session.id, currentSlideId]);
 
   if (!state && !loading) {
     return (
