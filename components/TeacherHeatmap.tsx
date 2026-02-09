@@ -343,7 +343,7 @@ export default function TeacherHeatmap() {
 
       {selectedCell && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-[720px] max-w-[92vw] rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-[980px] max-w-[95vw] rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <div className="text-lg font-semibold">
                 {selectedCell.studentName} · Problem {selectedCell.slideIndex}
@@ -352,7 +352,7 @@ export default function TeacherHeatmap() {
                 ✕
               </button>
             </div>
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_260px]">
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
               <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
                 <div className="text-xs font-semibold uppercase text-zinc-500">Response</div>
                 <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-700">
@@ -367,7 +367,7 @@ export default function TeacherHeatmap() {
                       responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
                     )}`}
                     alt="Student drawing"
-                    className="mt-2 h-60 w-full rounded-lg border border-zinc-200 object-contain bg-white"
+                    className="mt-2 h-[420px] w-full rounded-lg border border-zinc-200 object-contain bg-white"
                   />
                 ) : (
                   <div className="mt-2 text-sm text-zinc-500">No drawing yet.</div>
