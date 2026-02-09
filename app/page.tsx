@@ -189,6 +189,7 @@ export default function Home() {
     responseType: string,
     responseText: string
   ) => {
+    if (lessonStateRef.current?.session?.isFrozen) return;
     setLessonResponseSaving(true);
     await fetch("/api/lesson-response", {
       method: "POST",
@@ -992,6 +993,7 @@ export default function Home() {
                                 const choices = lessonState.slideResponseConfig?.choices || [];
                                 const multi = !!lessonState.slideResponseConfig?.multi;
                                 const explain = !!lessonState.slideResponseConfig?.explain;
+                                const disabled = !!lessonState.session?.isFrozen;
                                 if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
                                 return (
                                   <LessonChoiceWidget
@@ -1003,6 +1005,7 @@ export default function Home() {
                                     onExplainChange={setLessonChoiceExplain}
                                     saving={lessonResponseSaving}
                                     onChange={setLessonChoiceValue}
+                                    disabled={disabled}
                                     onSubmit={() =>
                                       saveLessonResponse(
                                         lessonState.session.id,

@@ -12,6 +12,7 @@ type LessonChoiceWidgetProps = {
   onChange: (next: string) => void;
   onSubmit: () => Promise<void>;
   saving?: boolean;
+  disabled?: boolean;
 };
 
 export default function LessonChoiceWidget({
@@ -24,6 +25,7 @@ export default function LessonChoiceWidget({
   onChange,
   onSubmit,
   saving,
+  disabled,
 }: LessonChoiceWidgetProps) {
   const selected = useMemo(() => {
     if (!multi) return new Set(value ? [value] : []);
@@ -62,6 +64,7 @@ export default function LessonChoiceWidget({
             <button
               key={`${choice}-${idx}`}
               type="button"
+              disabled={disabled}
               onClick={() => toggleChoice(choice)}
               className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
                 isSelected
@@ -85,6 +88,7 @@ export default function LessonChoiceWidget({
           <textarea
             value={explainValue || ""}
             onChange={(e) => onExplainChange?.(e.target.value)}
+            disabled={disabled}
             className="h-24 w-full rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-zinc-400"
             placeholder="Share your reasoning..."
           />
@@ -94,7 +98,7 @@ export default function LessonChoiceWidget({
         <button
           type="button"
           onClick={onSubmit}
-          disabled={saving || (!multi && !value) || (multi && selected.size === 0)}
+          disabled={disabled || saving || (!multi && !value) || (multi && selected.size === 0)}
           className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
         >
           {saving ? "Saving..." : "Submit"}
