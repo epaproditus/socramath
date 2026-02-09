@@ -35,6 +35,12 @@ export default function TeacherHeatmap() {
   const [timerMinutes, setTimerMinutes] = useState("5");
   const [timerSeconds, setTimerSeconds] = useState("0");
   const [paceSelection, setPaceSelection] = useState<number[]>([]);
+  const [selectedCell, setSelectedCell] = useState<{
+    studentId: string;
+    studentName: string;
+    slideId: string;
+    slideIndex: number;
+  } | null>(null);
   const paceInitRef = useRef(false);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
@@ -278,8 +284,16 @@ export default function TeacherHeatmap() {
                 return (
                   <div
                     key={`${student.id}-${slide.id}`}
-                    className={`border-t border-l border-zinc-100 h-10 ${color}`}
+                    className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer`}
                     title={cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response"}
+                    onClick={() =>
+                      setSelectedCell({
+                        studentId: student.id,
+                        studentName: student.name,
+                        slideId: slide.id,
+                        slideIndex: slide.index,
+                      })
+                    }
                   />
                 );
               })}
@@ -287,6 +301,44 @@ export default function TeacherHeatmap() {
           ))}
         </div>
       </div>
+
+      {selectedCell && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-[720px] max-w-[92vw] rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold">
+                {selectedCell.studentName} · Problem {selectedCell.slideIndex}
+              </div>
+              <button className="text-zinc-400" onClick={() => setSelectedCell(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_260px]">
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Response</div>
+                <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-700">
+                  {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.response || "No response yet."}
+                </div>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Drawing</div>
+                {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath ? (
+                  <img
+                    src={responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}
+                    alt="Student drawing"
+                    className="mt-2 h-60 w-full rounded-lg border border-zinc-200 object-contain bg-white"
+                  />
+                ) : (
+                  <div className="mt-2 text-sm text-zinc-500">No drawing yet.</div>
+                )}
+              </div>
+            </div>
+            <div className="mt-4 text-xs text-zinc-500">
+              Live updates are enabled while this modal is open.
+            </div>
+          </div>
+        </div>
+      )}
 
       {paceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

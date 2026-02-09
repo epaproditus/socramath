@@ -30,6 +30,7 @@ export default function LessonStudentView() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"chat" | "slide">("chat");
   const [timerNow, setTimerNow] = useState(() => Date.now());
+  const prevFrozenRef = useRef(false);
 
   const slideCount = state?.lesson.pageCount || state?.slides.length || 1;
   const currentSlideIndex = state?.currentSlideIndex || 1;
@@ -147,6 +148,30 @@ export default function LessonStudentView() {
     }, 1000);
     return () => clearInterval(interval);
   }, [state?.session?.timerRunning, state?.session?.timerEndsAt]);
+
+  useEffect(() => {
+    const isFrozen = !!state?.session?.isFrozen;
+    if (!prevFrozenRef.current && isFrozen) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = 640;
+        gain.gain.value = 0.08;
+        oscillator.connect(gain);
+        gain.connect(audioCtx.destination);
+        oscillator.start();
+        setTimeout(() => {
+          oscillator.stop();
+          audioCtx.close();
+        }, 180);
+      } catch {
+        // ignore audio errors
+      }
+    }
+    prevFrozenRef.current = isFrozen;
+  }, [state?.session?.isFrozen]);
 
   const updateStudentSlide = async (index: number) => {
     if (!state) return;

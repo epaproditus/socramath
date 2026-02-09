@@ -71,6 +71,7 @@ export default function Home() {
   const [lessonChoiceValue, setLessonChoiceValue] = useState("");
   const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
   const [timerNow, setTimerNow] = useState(() => Date.now());
+  const prevFrozenRef = useRef(false);
 
   useEffect(() => {
     initialize();
@@ -343,6 +344,30 @@ export default function Home() {
     }, 1000);
     return () => clearInterval(interval);
   }, [lessonState?.session?.timerRunning, lessonState?.session?.timerEndsAt]);
+
+  useEffect(() => {
+    const isFrozen = !!lessonState?.session?.isFrozen;
+    if (!prevFrozenRef.current && isFrozen) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = 640;
+        gain.gain.value = 0.08;
+        oscillator.connect(gain);
+        gain.connect(audioCtx.destination);
+        oscillator.start();
+        setTimeout(() => {
+          oscillator.stop();
+          audioCtx.close();
+        }, 180);
+      } catch {
+        // ignore audio errors
+      }
+    }
+    prevFrozenRef.current = isFrozen;
+  }, [lessonState?.session?.isFrozen]);
 
   const remainingSeconds = useMemo(() => {
     if (!lessonState?.session) return 0;
