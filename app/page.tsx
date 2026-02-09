@@ -926,34 +926,27 @@ export default function Home() {
                       ? lessonState.currentSlideId
                       : `${lessonState.currentSlideIndex}`;
                       return (
-                        <div className="h-full w-full">
-                          {(lessonState.session.timerRunning || lessonState.session.timerRemainingSec) && (
-                            <div className="px-4 pt-3 text-xs text-zinc-500">
-                              Timer: {formatTime(remainingSeconds)}
-                            </div>
-                          )}
-                          <LessonStage
-                            lessonId={lessonState.lesson.id}
-                            slideFilename={slideFilename}
-                            cacheKey={slideCacheKey}
-                            currentSlideIndex={lessonState.currentSlideIndex}
-                            slideCount={lessonState.lesson.pageCount || lessonState.slides.length || 1}
-                            sessionMode={lessonState.session.mode}
-                            onChangeSlide={handleLessonSlideChange}
-                            showDrawing={showDrawing}
-                            readOnly={!!lessonState.session.isFrozen}
-                            onDrawingChange={showDrawing ? handleDrawingChange : undefined}
-                            sceneData={lessonState.slideResponseConfig?.sceneData}
-                            onDrawingTextChange={(text) => {
-                              const slideId = lessonState.currentSlideId;
-                              if (!slideId) return;
-                              setLessonDrawingTextBySlide((prev) => {
-                                if ((prev[slideId] || "") === (text || "")) return prev;
-                                return { ...prev, [slideId]: text };
-                              });
-                            }}
-                          />
-                        </div>
+                        <LessonStage
+                          lessonId={lessonState.lesson.id}
+                          slideFilename={slideFilename}
+                          cacheKey={slideCacheKey}
+                          currentSlideIndex={lessonState.currentSlideIndex}
+                          slideCount={lessonState.lesson.pageCount || lessonState.slides.length || 1}
+                          sessionMode={lessonState.session.mode}
+                          onChangeSlide={handleLessonSlideChange}
+                          showDrawing={showDrawing}
+                          readOnly={!!lessonState.session.isFrozen}
+                          onDrawingChange={showDrawing ? handleDrawingChange : undefined}
+                          sceneData={lessonState.slideResponseConfig?.sceneData}
+                          onDrawingTextChange={(text) => {
+                            const slideId = lessonState.currentSlideId;
+                            if (!slideId) return;
+                            setLessonDrawingTextBySlide((prev) => {
+                              if ((prev[slideId] || "") === (text || "")) return prev;
+                              return { ...prev, [slideId]: text };
+                            });
+                          }}
+                        />
                       );
                   })()
                 ) : (
@@ -963,9 +956,24 @@ export default function Home() {
                 )}
               </div>
               <aside
-                className={`border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
+                className={`relative border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 overflow-y-auto transition-all duration-150 min-h-0 ${sidebarOpen ? "block" : "hidden lg:block"} ${sidebarOpen ? "" : "lg:w-0 lg:border-l-0"}`}
                 style={sidebarOpen ? { width: Math.max(420, sidebarWidth) } : undefined}
               >
+                {(lessonState?.session?.timerRunning || lessonState?.session?.timerRemainingSec) && (
+                  <div className="pointer-events-none absolute -left-3 top-3 z-40">
+                    <div
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm ${
+                        remainingSeconds <= 10
+                          ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
+                          : remainingSeconds <= 30
+                          ? "border-amber-300 bg-amber-100 text-amber-700 animate-pulse"
+                          : "border-zinc-200 bg-white text-zinc-700"
+                      }`}
+                    >
+                      Timer: {formatTime(remainingSeconds)}
+                    </div>
+                  </div>
+                )}
                 {sidebarOpen && (
                   <div className="relative h-full">
                     <div

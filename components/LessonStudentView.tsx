@@ -189,16 +189,9 @@ export default function LessonStudentView() {
           </div>
 
           <div className="flex w-full flex-col border-t border-zinc-200 lg:w-[420px] lg:border-t-0">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 text-sm">
-              <div className="flex items-center gap-3">
-                <div>
-                  Slide {currentSlideIndex} of {slideCount}
-                </div>
-                {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
-                  <div className="text-xs text-zinc-500">
-                    Timer: {formatTime(remainingSeconds)}
-                  </div>
-                )}
+            <div className="relative flex items-center justify-between border-b border-zinc-200 px-4 py-2 text-sm">
+              <div>
+                Slide {currentSlideIndex} of {slideCount}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -220,6 +213,21 @@ export default function LessonStudentView() {
                   Next <ChevronRight className="h-3 w-3" />
                 </button>
               </div>
+              {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
+                <div className="pointer-events-none absolute -left-3 top-3 z-20">
+                  <div
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm ${
+                      remainingSeconds <= 10
+                        ? "border-red-300 bg-red-100 text-red-700 animate-pulse"
+                        : remainingSeconds <= 30
+                        ? "border-amber-300 bg-amber-100 text-amber-700 animate-pulse"
+                        : "border-zinc-200 bg-white text-zinc-700"
+                    }`}
+                  >
+                    Timer: {formatTime(remainingSeconds)}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-auto p-3">
