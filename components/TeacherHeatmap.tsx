@@ -153,7 +153,10 @@ export default function TeacherHeatmap() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: data.session.id, ...payload }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to summarize");
+      }
       const json = await res.json();
       if (payload.slideId) {
         setSlideSummary(json.summary || "");
