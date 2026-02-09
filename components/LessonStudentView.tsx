@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, MessageSquareText, Presentation, Snowflake } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquareText, Presentation } from "lucide-react";
 import { Assistant } from "@/app/assistant";
 
 type Slide = { id: string; index: number };
@@ -153,6 +153,16 @@ export default function LessonStudentView() {
   return (
     <div className="h-dvh w-full">
       <div className="flex h-full flex-col relative">
+        {state?.session?.isFrozen && (
+          <div className="absolute inset-0 z-40 bg-sky-900/35 backdrop-blur-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-white/10 to-sky-200/10" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex items-center gap-2 rounded-full border border-sky-200/70 bg-white/80 px-5 py-2 text-base font-semibold text-sky-700 shadow-lg">
+                Frozen
+              </div>
+            </div>
+          </div>
+        )}
         {(state?.session.timerRunning || state?.session.timerRemainingSec) && (
           <div className="pointer-events-none fixed bottom-4 right-4 z-50">
             <div
@@ -205,16 +215,6 @@ export default function LessonStudentView() {
           </div>
 
           <div className="relative flex w-full flex-col border-t border-zinc-200 lg:w-[420px] lg:border-t-0">
-            {state?.session?.isFrozen && (
-              <div className="absolute inset-0 z-30 bg-sky-900/35 backdrop-blur-sm">
-                <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-white/10 to-sky-200/10" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex items-center gap-2 rounded-full border border-sky-200/70 bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-lg">
-                    Frozen
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="relative flex items-center justify-between border-b border-zinc-200 px-4 py-2 text-sm">
               <div>
                 Slide {currentSlideIndex} of {slideCount}
@@ -259,17 +259,6 @@ export default function LessonStudentView() {
                       )}`;
                     }}
                   />
-                  {state?.session?.isFrozen && (
-                    <div className="absolute inset-0 rounded-lg bg-sky-900/35 backdrop-blur-sm">
-                      <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-white/30 via-white/10 to-sky-200/10" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="flex items-center gap-2 rounded-full border border-sky-200/70 bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-lg">
-                          <Snowflake className="h-4 w-4" />
-                          Frozen
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-sm text-zinc-500">
