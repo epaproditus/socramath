@@ -29,7 +29,9 @@ export async function POST(req: Request) {
 
   const config = await prisma.appConfig.findFirst();
   const apiKey = config?.apiKey || process.env.DEEPSEEK_API_KEY || "";
-  const baseUrl = config?.baseUrl || "https://api.deepseek.com";
+  let baseUrl = config?.baseUrl || "https://api.deepseek.com";
+  if (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+  if (baseUrl.endsWith("/v1")) baseUrl = baseUrl.slice(0, -3);
   if (!apiKey) {
     return new NextResponse("Missing API Key", { status: 500 });
   }
@@ -70,7 +72,7 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
       ...(textSamples.length ? textSamples : ["- (No text responses yet)"])
     ].join("\n");
 
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -88,6 +90,7 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error("Lesson summary API error:", errorText);
       return new NextResponse(errorText, { status: 500 });
     }
 
@@ -124,7 +127,7 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
       ...(samples.length ? samples : ["- (No responses yet)"])
     ].join("\n");
 
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -142,6 +145,7 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error("Lesson summary API error:", errorText);
       return new NextResponse(errorText, { status: 500 });
     }
 
