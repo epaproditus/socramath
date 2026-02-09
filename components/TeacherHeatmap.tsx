@@ -352,8 +352,12 @@ export default function TeacherHeatmap() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="h-[92vh] w-[92vw] max-w-[1600px] rounded-2xl bg-white p-6 shadow-xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold">
-                {selectedCell.studentName} · Problem {selectedCell.slideIndex}
+              <div className="flex items-center gap-3 text-sm text-zinc-500">
+                <span className="font-semibold text-zinc-700">Heatmap</span>
+                <span>›</span>
+                <span>Problem {selectedCell.slideIndex}</span>
+                <span>›</span>
+                <span className="font-semibold text-zinc-700">{selectedCell.studentName}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -379,11 +383,35 @@ export default function TeacherHeatmap() {
                 </button>
               </div>
             </div>
-            <div className="mt-4 flex-1 min-h-0">
-              <div className="h-full rounded-xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
-                <div className="text-xs font-semibold uppercase text-zinc-500">Drawing</div>
+
+            <div className="mt-4 flex-1 min-h-0 grid gap-5 lg:grid-cols-[300px_1fr]">
+              <aside className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm flex flex-col">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Problem {selectedCell.slideIndex}</div>
+                <div className="mt-3 flex-1 overflow-auto">
+                  {data?.lesson?.id ? (
+                    (() => {
+                      const digits = String(data.lesson.pageCount || slides.length || 1).length;
+                      const thumbFilename = `${String(selectedCell.slideIndex).padStart(digits, "0")}.png`;
+                      return (
+                        <img
+                          src={`/uploads/lessons/${data.lesson.id}/slides/${thumbFilename}?v=${encodeURIComponent(
+                            selectedCell.slideId
+                          )}`}
+                          alt={`Problem ${selectedCell.slideIndex}`}
+                          className="w-full rounded-xl border border-zinc-200 object-contain bg-zinc-50"
+                        />
+                      );
+                    })()
+                  ) : (
+                    <div className="text-sm text-zinc-500">No slide available.</div>
+                  )}
+                </div>
+              </aside>
+
+              <div className="h-full rounded-2xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Live Work</div>
                 <div
-                  className="mt-2 flex-1 min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-white"
+                  className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
                   onWheel={(e) => {
                     if (!e.ctrlKey && !e.metaKey) return;
                     e.preventDefault();
@@ -417,6 +445,7 @@ export default function TeacherHeatmap() {
                 </div>
               </div>
             </div>
+
             <div className="mt-4 text-xs text-zinc-500">
               Live updates are enabled while this modal is open.
             </div>
