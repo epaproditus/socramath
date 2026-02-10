@@ -8,9 +8,11 @@ type AssessmentLabel = "green" | "yellow" | "red" | "grey";
 type StudentContext = {
   userId: string;
   name: string;
-  responseText: string;
-  drawingText: string;
-  drawingPath: string;
+  currentResponseText: string;
+  currentDrawingText: string;
+  currentDrawingPath: string;
+  otherTypedSummary: string;
+  otherDrawingSummary: string;
   updatedAt: Date;
 };
 
@@ -63,6 +65,33 @@ const normalizeTypedResponse = (raw: string) => {
     // plain text
   }
   return text;
+};
+
+const parseResponseConfigSummary = (raw: string | null) => {
+  if (!raw) return "None";
+  try {
+    const parsed = JSON.parse(raw) as {
+      widgets?: unknown;
+      choices?: unknown;
+      multi?: unknown;
+      explain?: unknown;
+    };
+    const widgets = Array.isArray(parsed.widgets)
+      ? parsed.widgets.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const choices = Array.isArray(parsed.choices)
+      ? parsed.choices.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const parts: string[] = [];
+    if (widgets.length) parts.push(`widgets=${widgets.join(",")}`);
+    if (choices.length) parts.push(`choices=${choices.length}`);
+    if (parsed.multi === true) parts.push("multi=true");
+    if (parsed.explain === true) parts.push("explain=true");
+    if (!parts.length) return "None";
+    return parts.join(" | ").slice(0, 500);
+  } catch {
+    return trimText(raw, 500);
+  }
 };
 
 const parseJsonObject = (raw: string) => {
@@ -200,49 +229,83 @@ export async function POST(req: Request) {
     return new NextResponse("Slide not found for session lesson", { status: 404 });
   }
 
-  const [responses, studentStates] = await Promise.all([
+  const [lessonSlides, responses, studentStates, sessionStates] = await Promise.all([
+    prisma.lessonSlide.findMany({
+      where: { lessonId: lessonSession.lessonId },
+      select: { id: true, index: true },
+      orderBy: { index: "asc" },
+    }),
     prisma.lessonResponse.findMany({
       where: {
         sessionId,
-        slideId,
         ...(studentId ? { userId: studentId } : {}),
       },
-      include: { user: true },
+      include: { user: true, slide: { select: { id: true, index: true } } },
       orderBy: { updatedAt: "desc" },
     }),
     prisma.lessonStudentSlideState
       .findMany({
         where: {
           sessionId,
-          slideId,
           ...(studentId ? { userId: studentId } : {}),
         },
-        include: { user: true },
+        include: { user: true, slide: { select: { id: true, index: true } } },
         orderBy: { updatedAt: "desc" },
       })
       .catch((err) => {
         if (isMissingTableError(err)) return [];
         throw err;
       }),
+    prisma.lessonSessionState.findMany({
+      where: {
+        sessionId,
+        ...(studentId ? { userId: studentId } : {}),
+      },
+      include: { user: true },
+    }),
   ]);
 
-  const contextByUser = new Map<string, StudentContext>();
+  type WorkCell = {
+    userId: string;
+    slideId: string;
+    slideIndex: number;
+    name: string;
+    responseText: string;
+    drawingText: string;
+    drawingPath: string;
+    updatedAt: Date;
+  };
+  const slideIndexMap = new Map(lessonSlides.map((item) => [item.id, item.index]));
+  const workByUserSlide = new Map<string, WorkCell>();
+  const rosterByUser = new Map<string, { userId: string; name: string }>();
+
   for (const response of responses) {
-    contextByUser.set(response.userId, {
+    const userName = response.user?.name || response.user?.email || "Student";
+    rosterByUser.set(response.userId, { userId: response.userId, name: userName });
+    const key = `${response.userId}:${response.slideId}`;
+    workByUserSlide.set(key, {
       userId: response.userId,
-      name: response.user?.name || response.user?.email || "Student",
+      slideId: response.slideId,
+      slideIndex: response.slide?.index || slideIndexMap.get(response.slideId) || 0,
+      name: userName,
       responseText: response.response || "",
       drawingText: "",
       drawingPath: response.drawingPath || "",
       updatedAt: response.updatedAt,
     });
   }
+
   for (const state of studentStates) {
-    const existing = contextByUser.get(state.userId);
+    const userName = state.user?.name || state.user?.email || "Student";
+    rosterByUser.set(state.userId, { userId: state.userId, name: userName });
+    const key = `${state.userId}:${state.slideId}`;
+    const existing = workByUserSlide.get(key);
     if (existing && existing.updatedAt > state.updatedAt) continue;
-    contextByUser.set(state.userId, {
+    workByUserSlide.set(key, {
       userId: state.userId,
-      name: state.user?.name || state.user?.email || existing?.name || "Student",
+      slideId: state.slideId,
+      slideIndex: state.slide?.index || slideIndexMap.get(state.slideId) || existing?.slideIndex || 0,
+      name: userName || existing?.name || "Student",
       responseText: state.responseText || existing?.responseText || "",
       drawingText: state.drawingText || "",
       drawingPath: state.drawingPath || existing?.drawingPath || "",
@@ -250,32 +313,76 @@ export async function POST(req: Request) {
     });
   }
 
-  if (!contextByUser.size && !studentId) {
+  for (const state of sessionStates) {
+    const userName = state.user?.name || state.user?.email || "Student";
+    rosterByUser.set(state.userId, { userId: state.userId, name: userName });
+  }
+
+  if (!rosterByUser.size && !studentId) {
     return NextResponse.json({ ok: true, updated: 0, assessments: [] });
   }
-  if (studentId && !contextByUser.has(studentId)) {
+  if (studentId && !rosterByUser.has(studentId)) {
     const user = await prisma.user.findUnique({
       where: { id: studentId },
       select: { name: true, email: true },
     });
-    contextByUser.set(studentId, {
+    rosterByUser.set(studentId, {
       userId: studentId,
       name: user?.name || user?.email || session.user.name || session.user.email || "Student",
-      responseText: "",
-      drawingText: "",
-      drawingPath: "",
-      updatedAt: new Date(0),
     });
   }
-  const contexts = Array.from(contextByUser.values());
+
+  const workByUser = new Map<string, WorkCell[]>();
+  for (const cell of workByUserSlide.values()) {
+    const list = workByUser.get(cell.userId) || [];
+    list.push(cell);
+    workByUser.set(cell.userId, list);
+  }
+
+  const contexts: StudentContext[] = Array.from(rosterByUser.values()).map((student) => {
+    const perSlide = [...(workByUser.get(student.userId) || [])].sort(
+      (a, b) => a.slideIndex - b.slideIndex || b.updatedAt.getTime() - a.updatedAt.getTime()
+    );
+    const current = perSlide.find((item) => item.slideId === slideId);
+    const other = perSlide.filter((item) => item.slideId !== slideId);
+    const otherTypedSummary = other
+      .map((item) => {
+        const typed = normalizeTypedResponse(item.responseText);
+        if (!typed) return "";
+        return `S${item.slideIndex}: ${trimText(typed, 140)}`;
+      })
+      .filter(Boolean)
+      .slice(0, 6)
+      .join(" || ");
+    const otherDrawingSummary = other
+      .map((item) => {
+        const drawing = item.drawingText.trim();
+        if (!drawing) return "";
+        return `S${item.slideIndex}: ${trimText(drawing, 140)}`;
+      })
+      .filter(Boolean)
+      .slice(0, 6)
+      .join(" || ");
+
+    return {
+      userId: student.userId,
+      name: student.name,
+      currentResponseText: current?.responseText || "",
+      currentDrawingText: current?.drawingText || "",
+      currentDrawingPath: current?.drawingPath || "",
+      otherTypedSummary: otherTypedSummary || "None",
+      otherDrawingSummary: otherDrawingSummary || "None",
+      updatedAt: current?.updatedAt || perSlide[0]?.updatedAt || new Date(0),
+    };
+  });
 
   await ensureAssessmentTable();
 
   const autoGrey: Rating[] = [];
   const evaluable = contexts
     .map((context) => {
-      const typed = normalizeTypedResponse(context.responseText);
-      const drawing = context.drawingText.trim();
+      const typed = normalizeTypedResponse(context.currentResponseText);
+      const drawing = context.currentDrawingText.trim();
       const evidence = [typed ? `typed: ${typed}` : "", drawing ? `drawing text: ${drawing}` : ""]
         .filter(Boolean)
         .join(" | ");
@@ -290,6 +397,8 @@ export async function POST(req: Request) {
         studentId: context.userId,
         name: context.name,
         evidence,
+        otherTypedSummary: context.otherTypedSummary,
+        otherDrawingSummary: context.otherDrawingSummary,
       };
     })
     .filter((entry) => !!entry.evidence);
@@ -302,16 +411,19 @@ export async function POST(req: Request) {
     let baseUrl = config?.baseUrl || "https://api.deepseek.com";
     if (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
     if (baseUrl.endsWith("/v1")) baseUrl = baseUrl.slice(0, -3);
+    const responseConfigSummary = parseResponseConfigSummary(slide.responseConfig || null);
 
     const system = `You evaluate student understanding for one slide.
 Return strict JSON only:
 {"ratings":[{"studentId":"string","label":"green|yellow|red","reason":"string"}]}
 Rubric:
-- green: evidence shows solid understanding aligned with rubric.
+- green: evidence clearly addresses all required parts in the slide prompt and rubric.
 - yellow: partial understanding or unclear/incomplete reasoning.
 - red: likely misconception or incorrect understanding.
 Rules:
-- Use only provided evidence.
+- Score only this slide using "current slide evidence".
+- Other-slide context is supplemental and MUST NOT by itself justify green.
+- If current slide evidence is partial, incomplete, or covers only one part, do not return green.
 - Never use names in reason.
 - Keep reason under 20 words.
 - Do not output markdown.`;
@@ -322,8 +434,18 @@ Rules:
       `Slide prompt: ${trimText(slide.prompt || "None", 600)}`,
       `Slide text: ${trimText(slide.text || "None", 600)}`,
       `Rubric: ${parseRubric(slide.rubric || null)}`,
+      `Response type: ${slide.responseType || "text"}`,
+      `Response config: ${responseConfigSummary}`,
       "Evidence by student:",
-      ...evaluable.map((entry) => `- ${entry.studentId}: ${trimText(entry.evidence, 500)}`),
+      ...evaluable.map(
+        (entry) =>
+          [
+            `- ${entry.studentId}:`,
+            `  current slide evidence: ${trimText(entry.evidence, 500)}`,
+            `  other slide typed responses: ${trimText(entry.otherTypedSummary, 450)}`,
+            `  other slide drawing text: ${trimText(entry.otherDrawingSummary, 450)}`,
+          ].join("\n")
+      ),
     ].join("\n");
 
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
