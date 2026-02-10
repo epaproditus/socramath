@@ -36,6 +36,13 @@ type LessonState = {
   slideRubric?: string[];
   slideResponseType?: string;
   slideResponseConfig?: Record<string, any>;
+  slideWork?: {
+    responseText?: string;
+    drawingPath?: string;
+    drawingText?: string;
+    drawingSnapshot?: Record<string, unknown> | null;
+    updatedAt?: string;
+  } | null;
   slides: { id: string; index: number }[];
 };
 
@@ -65,6 +72,10 @@ export default function Home() {
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonDrawingTextBySlide, setLessonDrawingTextBySlide] = useState<Record<string, string>>({});
+  const [lessonDrawingPathBySlide, setLessonDrawingPathBySlide] = useState<Record<string, string>>({});
+  const [lessonDrawingSceneBySlide, setLessonDrawingSceneBySlide] = useState<
+    Record<string, { snapshot?: Record<string, unknown> }>
+  >({});
   const [lessonResponseText, setLessonResponseText] = useState("");
   const [lessonResponseSaving, setLessonResponseSaving] = useState(false);
   const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -72,6 +83,7 @@ export default function Home() {
   const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const prevFrozenRef = useRef(false);
+  const drawingSceneSignatureRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     initialize();
@@ -88,6 +100,14 @@ export default function Home() {
   useEffect(() => {
     lessonDrawingTextRef.current = lessonDrawingTextBySlide;
   }, [lessonDrawingTextBySlide]);
+  const lessonDrawingPathRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    lessonDrawingPathRef.current = lessonDrawingPathBySlide;
+  }, [lessonDrawingPathBySlide]);
+  const lessonDrawingSceneRef = useRef<Record<string, { snapshot?: Record<string, unknown> }>>({});
+  useEffect(() => {
+    lessonDrawingSceneRef.current = lessonDrawingSceneBySlide;
+  }, [lessonDrawingSceneBySlide]);
 
   useEffect(() => {
     activeExperienceRef.current = activeExperience;
@@ -129,6 +149,43 @@ export default function Home() {
         return;
       }
       const json = await res.json();
+      const slideId = json?.currentSlideId as string | null | undefined;
+      const slideWork = json?.slideWork as LessonState["slideWork"];
+      if (slideId && slideWork) {
+        if (typeof slideWork.responseText === "string") {
+          setLessonResponseText(slideWork.responseText);
+        }
+        if (typeof slideWork.drawingText === "string") {
+          setLessonDrawingTextBySlide((prev) => {
+            if ((prev[slideId] || "") === slideWork.drawingText) return prev;
+            return { ...prev, [slideId]: slideWork.drawingText || "" };
+          });
+        }
+        if (typeof slideWork.drawingPath === "string") {
+          setLessonDrawingPathBySlide((prev) => {
+            if ((prev[slideId] || "") === slideWork.drawingPath) return prev;
+            return { ...prev, [slideId]: slideWork.drawingPath || "" };
+          });
+        }
+        if (slideWork.drawingSnapshot && typeof slideWork.drawingSnapshot === "object") {
+          const signature = JSON.stringify(slideWork.drawingSnapshot);
+          if (drawingSceneSignatureRef.current[slideId] !== signature) {
+            drawingSceneSignatureRef.current[slideId] = signature;
+            setLessonDrawingSceneBySlide((prev) => ({
+              ...prev,
+              [slideId]: { snapshot: slideWork.drawingSnapshot || undefined },
+            }));
+          }
+        } else {
+          drawingSceneSignatureRef.current[slideId] = "";
+          setLessonDrawingSceneBySlide((prev) => {
+            if (!prev[slideId]) return prev;
+            const next = { ...prev };
+            delete next[slideId];
+            return next;
+          });
+        }
+      }
       setLessonState(json);
       if (preferLesson || activeExperienceRef.current === "test") {
         setActiveExperience("lesson");
@@ -153,6 +210,38 @@ export default function Home() {
     const json = await res.json();
     const responseText = json.response || "";
     setLessonResponseText(responseText);
+    const drawingText = typeof json?.drawingText === "string" ? json.drawingText : "";
+    setLessonDrawingTextBySlide((prev) => {
+      if ((prev[slideId] || "") === drawingText) return prev;
+      return { ...prev, [slideId]: drawingText };
+    });
+    const drawingPath = typeof json?.drawingPath === "string" ? json.drawingPath : "";
+    setLessonDrawingPathBySlide((prev) => {
+      if ((prev[slideId] || "") === drawingPath) return prev;
+      return { ...prev, [slideId]: drawingPath };
+    });
+    const drawingSnapshot =
+      json?.drawingSnapshot && typeof json.drawingSnapshot === "object"
+        ? (json.drawingSnapshot as Record<string, unknown>)
+        : null;
+    if (drawingSnapshot) {
+      const signature = JSON.stringify(drawingSnapshot);
+      if (drawingSceneSignatureRef.current[slideId] !== signature) {
+        drawingSceneSignatureRef.current[slideId] = signature;
+        setLessonDrawingSceneBySlide((prev) => ({
+          ...prev,
+          [slideId]: { snapshot: drawingSnapshot },
+        }));
+      }
+    } else {
+      drawingSceneSignatureRef.current[slideId] = "";
+      setLessonDrawingSceneBySlide((prev) => {
+        if (!prev[slideId]) return prev;
+        const next = { ...prev };
+        delete next[slideId];
+        return next;
+      });
+    }
 
     const responseType = lessonStateRef.current?.slideResponseType || "text";
     const widgets = lessonStateRef.current?.slideResponseConfig?.widgets || (
@@ -193,11 +282,22 @@ export default function Home() {
     responseText: string
   ) => {
     if (lessonStateRef.current?.session?.isFrozen) return;
+    const drawingText = lessonDrawingTextRef.current[slideId] || "";
+    const drawingPath = lessonDrawingPathRef.current[slideId] || "";
+    const drawingSnapshot = lessonDrawingSceneRef.current[slideId]?.snapshot;
     setLessonResponseSaving(true);
     await fetch("/api/lesson-response", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, slideId, response: responseText, responseType }),
+      body: JSON.stringify({
+        sessionId,
+        slideId,
+        response: responseText,
+        responseType,
+        drawingText,
+        drawingPath: drawingPath || undefined,
+        drawingSnapshot,
+      }),
     }).catch(() => {});
     setLessonResponseSaving(false);
   };
@@ -234,16 +334,31 @@ export default function Home() {
   };
 
   const handleLessonDrawing = async (dataUrl: string) => {
-    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
-    await fetch("/api/lesson-drawing", {
+    const current = lessonStateRef.current;
+    if (!current?.session.id || !current.currentSlideId) return;
+    const slideId = current.currentSlideId;
+    const drawingText = lessonDrawingTextRef.current[slideId] || "";
+    const drawingSnapshot = lessonDrawingSceneRef.current[slideId]?.snapshot;
+    const res = await fetch("/api/lesson-drawing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sessionId: lessonState.session.id,
-        slideId: lessonState.currentSlideId,
+        sessionId: current.session.id,
+        slideId,
         dataUrl,
+        drawingText,
+        drawingSnapshot,
       }),
     });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.drawingPath && typeof json.drawingPath === "string") {
+        setLessonDrawingPathBySlide((prev) => ({
+          ...prev,
+          [slideId]: json.drawingPath,
+        }));
+      }
+    }
   };
 
   const handleDrawingChange = (dataUrl: string) => {
@@ -251,6 +366,29 @@ export default function Home() {
     drawingSaveTimer.current = setTimeout(() => {
       handleLessonDrawing(dataUrl);
     }, 700);
+  };
+
+  const handleDrawingSceneChange = (sceneData: {
+    elements: unknown[];
+    files: Record<string, unknown>;
+    appState: Record<string, unknown>;
+    snapshot: unknown;
+  }) => {
+    const slideId = lessonStateRef.current?.currentSlideId;
+    if (!slideId) return;
+    const snapshot =
+      sceneData?.snapshot && typeof sceneData.snapshot === "object"
+        ? (sceneData.snapshot as Record<string, unknown>)
+        : {};
+    const signature = JSON.stringify(snapshot);
+    if (drawingSceneSignatureRef.current[slideId] === signature) return;
+    drawingSceneSignatureRef.current[slideId] = signature;
+    setLessonDrawingSceneBySlide((prev) => ({
+      ...prev,
+      [slideId]: {
+        snapshot,
+      },
+    }));
   };
 
   useEffect(() => {
@@ -1013,6 +1151,10 @@ export default function Home() {
                     const slideCacheKey = lessonState.currentSlideId
                       ? lessonState.currentSlideId
                       : `${lessonState.currentSlideIndex}`;
+                    const slideSceneData =
+                      lessonState.currentSlideId && lessonDrawingSceneBySlide[lessonState.currentSlideId]
+                        ? lessonDrawingSceneBySlide[lessonState.currentSlideId]
+                        : lessonState.slideResponseConfig?.sceneData;
                       return (
                         <LessonStage
                           lessonId={lessonState.lesson.id}
@@ -1025,7 +1167,8 @@ export default function Home() {
                           showDrawing={showDrawing}
                           readOnly={!!lessonState.session.isFrozen}
                           onDrawingChange={showDrawing ? handleDrawingChange : undefined}
-                          sceneData={lessonState.slideResponseConfig?.sceneData}
+                          sceneData={slideSceneData}
+                          onSceneChange={showDrawing ? handleDrawingSceneChange : undefined}
                           onDrawingTextChange={(text) => {
                             const slideId = lessonState.currentSlideId;
                             if (!slideId) return;

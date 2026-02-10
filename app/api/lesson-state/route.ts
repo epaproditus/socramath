@@ -2,6 +2,12 @@ import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
 import { emitRealtime } from "@/lib/realtime";
 
+const isMissingTableError = (err: unknown) =>
+  typeof err === "object" &&
+  err !== null &&
+  "code" in err &&
+  (err as { code?: string }).code === "P2021";
+
 
 export async function GET() {
   const session = await auth();
@@ -139,6 +145,31 @@ export async function GET() {
   const slide = await prisma.lessonSlide.findFirst({
     where: { lessonId: lesson.id, index: currentSlideIndex },
   });
+  const slideWork =
+    slide?.id
+      ? await prisma.lessonStudentSlideState
+          .findUnique({
+            where: {
+              sessionId_slideId_userId: {
+                sessionId: lessonSession.id,
+                slideId: slide.id,
+                userId: session.user.id,
+              },
+            },
+          })
+          .catch((err) => {
+            if (isMissingTableError(err)) return null;
+            throw err;
+          })
+      : null;
+  let drawingSnapshot: Record<string, unknown> | null = null;
+  if (slideWork?.drawingSnapshot) {
+    try {
+      drawingSnapshot = JSON.parse(slideWork.drawingSnapshot);
+    } catch {
+      drawingSnapshot = null;
+    }
+  }
 
   return Response.json({
     lesson: {
@@ -165,6 +196,15 @@ export async function GET() {
     slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
     slideResponseType: slide?.responseType || "text",
     slideResponseConfig: slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    slideWork: slideWork
+      ? {
+          responseText: slideWork.responseText || "",
+          drawingPath: slideWork.drawingPath || "",
+          drawingText: slideWork.drawingText || "",
+          drawingSnapshot,
+          updatedAt: slideWork.updatedAt,
+        }
+      : null,
     slides,
   });
 }
@@ -233,8 +273,11 @@ export async function POST(req: Request) {
         currentSlideIndex: Math.max(1, currentSlideIndex),
       },
     });
-  } catch (err: any) {
-    const message = typeof err?.message === "string" ? err.message : "";
+  } catch (err) {
+    const message =
+      typeof err === "object" && err !== null && "message" in err
+        ? String((err as { message?: unknown }).message || "")
+        : "";
     if (!message.toLowerCase().includes("readonly")) {
       throw err;
     }

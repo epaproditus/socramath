@@ -21,6 +21,12 @@ type LessonStageProps = {
     files?: Record<string, unknown>;
     appState?: Record<string, unknown>;
   };
+  onSceneChange?: (sceneData: {
+    elements: unknown[];
+    files: Record<string, unknown>;
+    appState: Record<string, unknown>;
+    snapshot: unknown;
+  }) => void;
 };
 
 export default function LessonStage({
@@ -36,6 +42,7 @@ export default function LessonStage({
   onDrawingTextChange,
   readOnly,
   sceneData,
+  onSceneChange,
 }: LessonStageProps) {
   const cacheParam = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
   const slideImageUrl = `/uploads/lessons/${lessonId}/slides/${slideFilename}${cacheParam}`;
@@ -51,6 +58,7 @@ export default function LessonStage({
             onChange={onDrawingChange}
             onTextChange={onDrawingTextChange}
             sceneData={sceneData}
+            onSceneChange={onSceneChange}
             readOnly={readOnly}
           />
         ) : (

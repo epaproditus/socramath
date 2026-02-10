@@ -2,6 +2,70 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
 
+const isMissingTableError = (err: unknown) =>
+  typeof err === "object" &&
+  err !== null &&
+  "code" in err &&
+  (err as { code?: string }).code === "P2021";
+
+const trimText = (value: string, max = 280) => value.replace(/\s+/g, " ").trim().slice(0, max);
+
+const parseRubric = (raw: string | null) => {
+  if (!raw) return "None";
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .join(" | ")
+        .slice(0, 1000);
+    }
+  } catch {
+    // fall through
+  }
+  return raw.slice(0, 1000);
+};
+
+const completeSummary = async ({
+  baseUrl,
+  apiKey,
+  model,
+  system,
+  user,
+}: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+}) => {
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0.2,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Lesson summary API error:", errorText);
+    throw new Error(errorText || "Summary request failed");
+  }
+
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content?.trim() || "";
+};
+
 export async function POST(req: Request) {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -41,23 +105,82 @@ export async function POST(req: Request) {
     select: { id: true, index: true },
   });
   const slideIndexMap = new Map(slides.map((s) => [s.id, s.index]));
+  const model = config?.model || "deepseek-chat";
 
   if (slideId) {
-    const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
-    const responses = await prisma.lessonResponse.findMany({
-      where: { sessionId, slideId },
-      include: { user: true },
-      orderBy: { updatedAt: "desc" },
+    const [slide, responses, studentStates] = await Promise.all([
+      prisma.lessonSlide.findUnique({ where: { id: slideId } }),
+      prisma.lessonResponse.findMany({
+        where: { sessionId, slideId },
+        include: { user: true },
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.lessonStudentSlideState
+        .findMany({
+          where: { sessionId, slideId },
+          include: { user: true },
+          orderBy: { updatedAt: "desc" },
+        })
+        .catch((err) => {
+          if (isMissingTableError(err)) return [];
+          throw err;
+        }),
+    ]);
+
+    type StudentContext = {
+      name: string;
+      responseText: string;
+      drawingText: string;
+      drawingPath: string;
+      updatedAt: Date;
+    };
+    const contextByUser = new Map<string, StudentContext>();
+
+    for (const response of responses) {
+      contextByUser.set(response.userId, {
+        name: response.user?.name || response.user?.email || "Student",
+        responseText: response.response || "",
+        drawingText: "",
+        drawingPath: response.drawingPath || "",
+        updatedAt: response.updatedAt,
+      });
+    }
+
+    for (const state of studentStates) {
+      const existing = contextByUser.get(state.userId);
+      if (existing && existing.updatedAt > state.updatedAt) continue;
+      contextByUser.set(state.userId, {
+        name: state.user?.name || state.user?.email || existing?.name || "Student",
+        responseText: state.responseText || existing?.responseText || "",
+        drawingText: state.drawingText || "",
+        drawingPath: state.drawingPath || existing?.drawingPath || "",
+        updatedAt: state.updatedAt,
+      });
+    }
+
+    const contexts = Array.from(contextByUser.values()).sort(
+      (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
+    );
+
+    const textCount = contexts.filter((c) => c.responseText.trim().length > 0).length;
+    const drawingTextCount = contexts.filter((c) => c.drawingText.trim().length > 0).length;
+    const drawingOnlyCount = contexts.filter(
+      (c) => !!c.drawingPath && !c.responseText.trim() && !c.drawingText.trim()
+    ).length;
+
+    const textSamples = contexts.slice(0, 16).map((context) => {
+      const parts: string[] = [];
+      if (context.responseText.trim()) {
+        parts.push(`typed: ${trimText(context.responseText, 220)}`);
+      }
+      if (context.drawingText.trim()) {
+        parts.push(`drawing text: ${trimText(context.drawingText, 220)}`);
+      }
+      if (!parts.length && context.drawingPath) {
+        parts.push("drawing submitted (no extracted text)");
+      }
+      return `- ${context.name}: ${parts.join(" | ") || "No work yet"}`;
     });
-
-    const textSamples = responses
-      .filter((r) => r.response && r.response.trim())
-      .slice(0, 12)
-      .map((r) => `- Response: ${r.response?.slice(0, 240)}`);
-
-    const drawingOnlyCount = responses.filter((r) => r.drawingPath && !(r.response || "").trim()).length;
-    const textCount = responses.filter((r) => (r.response || "").trim()).length;
-    const total = responses.length;
 
     const system = `You summarize a class's progress on a single slide.
 Output 4-6 bullet points. Focus on common misconceptions, progress, and who might need help.
@@ -69,58 +192,109 @@ Keep it concise and teacher-friendly.`;
       `Slide index: ${slideIndexMap.get(slideId) || "?"}`,
       `Slide prompt: ${slide?.prompt ? slide.prompt.slice(0, 600) : "None"}`,
       `Slide text: ${slide?.text ? slide.text.slice(0, 600) : "None"}`,
-      `Rubric: ${slide?.rubric ? slide.rubric.slice(0, 600) : "None"}`,
+      `Rubric: ${parseRubric(slide?.rubric || null)}`,
       `Response type: ${slide?.responseType || "text"}`,
-      `Total responses: ${total}`,
+      `Total active students with work: ${contexts.length}`,
       `Text responses: ${textCount}`,
+      `Drawing text snippets: ${drawingTextCount}`,
       `Drawing-only responses: ${drawingOnlyCount}`,
       `Sample responses:`,
       ...(textSamples.length ? textSamples : ["- (No text responses yet)"]),
     ].join("\n");
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config?.model || "deepseek-chat",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        temperature: 0.2,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Lesson summary API error:", errorText);
-      return new NextResponse(errorText, { status: 500 });
+    let summary = "";
+    try {
+      summary = await completeSummary({ baseUrl, apiKey, model, system, user });
+    } catch (err) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "";
+      return new NextResponse(message || "Summary request failed", { status: 500 });
     }
-
-    const data = await response.json();
-    const summary = data?.choices?.[0]?.message?.content?.trim() || "";
     return NextResponse.json({ ok: true, summary });
   }
 
   if (studentId) {
-    const responses = await prisma.lessonResponse.findMany({
-      where: { sessionId, userId: studentId },
-      include: { user: true, slide: true },
-      orderBy: { updatedAt: "desc" },
-    });
+    const [responses, studentStates] = await Promise.all([
+      prisma.lessonResponse.findMany({
+        where: { sessionId, userId: studentId },
+        include: { user: true, slide: true },
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.lessonStudentSlideState
+        .findMany({
+          where: { sessionId, userId: studentId },
+          include: { user: true, slide: true },
+          orderBy: { updatedAt: "desc" },
+        })
+        .catch((err) => {
+          if (isMissingTableError(err)) return [];
+          throw err;
+        }),
+    ]);
 
-    const name = responses[0]?.user?.name || responses[0]?.user?.email || "Student";
-    const samples = responses
-      .slice(0, 12)
-      .map((r) => {
-        const idx = slideIndexMap.get(r.slideId) || r.slide?.index || "?";
-        const text = (r.response || "").trim();
-        const prompt = r.slide?.prompt ? r.slide.prompt.slice(0, 200) : "No prompt";
-        return `- Slide ${idx} (prompt: ${prompt}): ${text ? text.slice(0, 200) : "(drawing only)"}`;
+    type SlideContext = {
+      slideId: string;
+      slideIndex: number;
+      prompt: string;
+      responseText: string;
+      drawingText: string;
+      drawingPath: string;
+      updatedAt: Date;
+      name: string;
+    };
+    const contextBySlide = new Map<string, SlideContext>();
+
+    for (const response of responses) {
+      const idx = slideIndexMap.get(response.slideId) || response.slide?.index || 0;
+      contextBySlide.set(response.slideId, {
+        slideId: response.slideId,
+        slideIndex: idx,
+        prompt: response.slide?.prompt || "",
+        responseText: response.response || "",
+        drawingText: "",
+        drawingPath: response.drawingPath || "",
+        updatedAt: response.updatedAt,
+        name: response.user?.name || response.user?.email || "Student",
       });
+    }
+
+    for (const state of studentStates) {
+      const existing = contextBySlide.get(state.slideId);
+      if (existing && existing.updatedAt > state.updatedAt) continue;
+      const idx = slideIndexMap.get(state.slideId) || state.slide?.index || existing?.slideIndex || 0;
+      contextBySlide.set(state.slideId, {
+        slideId: state.slideId,
+        slideIndex: idx,
+        prompt: state.slide?.prompt || existing?.prompt || "",
+        responseText: state.responseText || existing?.responseText || "",
+        drawingText: state.drawingText || "",
+        drawingPath: state.drawingPath || existing?.drawingPath || "",
+        updatedAt: state.updatedAt,
+        name: state.user?.name || state.user?.email || existing?.name || "Student",
+      });
+    }
+
+    const contexts = Array.from(contextBySlide.values())
+      .sort((a, b) => a.slideIndex - b.slideIndex || b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, 16);
+
+    const name =
+      contexts[0]?.name ||
+      responses[0]?.user?.name ||
+      responses[0]?.user?.email ||
+      studentStates[0]?.user?.name ||
+      studentStates[0]?.user?.email ||
+      "Student";
+    const samples = contexts.map((context) => {
+      const parts: string[] = [];
+      if (context.responseText.trim()) parts.push(`typed: ${trimText(context.responseText, 180)}`);
+      if (context.drawingText.trim()) parts.push(`drawing text: ${trimText(context.drawingText, 180)}`);
+      if (!parts.length && context.drawingPath) parts.push("drawing submitted (no extracted text)");
+      if (!parts.length) parts.push("no work yet");
+      return `- Slide ${context.slideIndex || "?"} (prompt: ${trimText(context.prompt || "No prompt", 140)}): ${parts.join(" | ")}`;
+    });
 
     const system = `You summarize a single student's progress across multiple slides.
 Output 4-6 bullet points. Focus on strengths, misconceptions, and next steps.
@@ -129,35 +303,21 @@ Do not reveal final answers. Keep it concise and teacher-friendly.`;
     const user = [
       `Lesson: ${lessonSession.lesson.title}`,
       `Student: ${name}`,
-      `Total responses: ${responses.length}`,
+      `Total slides with work: ${contexts.length}`,
       `Recent responses:`,
       ...(samples.length ? samples : ["- (No responses yet)"]),
     ].join("\n");
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config?.model || "deepseek-chat",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        temperature: 0.2,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Lesson summary API error:", errorText);
-      return new NextResponse(errorText, { status: 500 });
+    let summary = "";
+    try {
+      summary = await completeSummary({ baseUrl, apiKey, model, system, user });
+    } catch (err) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "";
+      return new NextResponse(message || "Summary request failed", { status: 500 });
     }
-
-    const data = await response.json();
-    const summary = data?.choices?.[0]?.message?.content?.trim() || "";
     return NextResponse.json({ ok: true, summary });
   }
 

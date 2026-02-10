@@ -1,6 +1,12 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
 
+const isMissingTableError = (err: unknown) =>
+  typeof err === "object" &&
+  err !== null &&
+  "code" in err &&
+  (err as { code?: string }).code === "P2021";
+
 export async function GET() {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -33,16 +39,27 @@ export async function GET() {
     select: { id: true, index: true },
   });
 
-  const responses = await prisma.lessonResponse.findMany({
-    where: { sessionId: lessonSession.id },
-    include: { user: true },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  const states = await prisma.lessonSessionState.findMany({
-    where: { sessionId: lessonSession.id },
-    include: { user: true },
-  });
+  const [responses, states, studentSlideStates] = await Promise.all([
+    prisma.lessonResponse.findMany({
+      where: { sessionId: lessonSession.id },
+      include: { user: true },
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.lessonSessionState.findMany({
+      where: { sessionId: lessonSession.id },
+      include: { user: true },
+    }),
+    prisma.lessonStudentSlideState
+      .findMany({
+        where: { sessionId: lessonSession.id },
+        include: { user: true },
+        orderBy: { updatedAt: "desc" },
+      })
+      .catch((err) => {
+        if (isMissingTableError(err)) return [];
+        throw err;
+      }),
+  ]);
 
   const studentsMap = new Map<string, { id: string; name: string; email?: string | null }>();
   for (const response of responses) {
@@ -61,6 +78,14 @@ export async function GET() {
       email: state.user?.email,
     });
   }
+  for (const studentState of studentSlideStates) {
+    const name = studentState.user?.name || studentState.user?.email || "Student";
+    studentsMap.set(studentState.userId, {
+      id: studentState.userId,
+      name,
+      email: studentState.user?.email,
+    });
+  }
 
   const students = Array.from(studentsMap.values()).sort((a, b) =>
     a.name.localeCompare(b.name)
@@ -69,13 +94,28 @@ export async function GET() {
   const cellMap = new Map<string, {
     response: string;
     drawingPath: string;
+    drawingText: string;
     updatedAt: string;
   }>();
   for (const response of responses) {
     cellMap.set(`${response.userId}:${response.slideId}`, {
       response: response.response || "",
       drawingPath: response.drawingPath || "",
+      drawingText: "",
       updatedAt: response.updatedAt.toISOString(),
+    });
+  }
+  for (const studentState of studentSlideStates) {
+    const key = `${studentState.userId}:${studentState.slideId}`;
+    const existing = cellMap.get(key);
+    if (existing && new Date(existing.updatedAt).getTime() > studentState.updatedAt.getTime()) {
+      continue;
+    }
+    cellMap.set(key, {
+      response: studentState.responseText || existing?.response || "",
+      drawingPath: studentState.drawingPath || existing?.drawingPath || "",
+      drawingText: studentState.drawingText || "",
+      updatedAt: studentState.updatedAt.toISOString(),
     });
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, MessageSquareText, Presentation } from "lucide-react";
 import { Assistant } from "@/app/assistant";
 import { getRealtimeSocket } from "@/lib/realtime-client";
@@ -154,7 +154,9 @@ export default function LessonStudentView() {
     const isFrozen = !!state?.session?.isFrozen;
     if (!prevFrozenRef.current && isFrozen) {
       try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioCtx = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) return;
+        const audioCtx = new AudioCtx();
         const oscillator = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         oscillator.type = "sine";
