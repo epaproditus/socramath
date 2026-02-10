@@ -72,6 +72,7 @@ export default function Home() {
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonDrawingTextBySlide, setLessonDrawingTextBySlide] = useState<Record<string, string>>({});
+  const [lessonResponseTextBySlide, setLessonResponseTextBySlide] = useState<Record<string, string>>({});
   const [lessonDrawingPathBySlide, setLessonDrawingPathBySlide] = useState<Record<string, string>>({});
   const [lessonDrawingSceneBySlide, setLessonDrawingSceneBySlide] = useState<
     Record<string, { snapshot?: Record<string, unknown> }>
@@ -100,6 +101,10 @@ export default function Home() {
   useEffect(() => {
     lessonDrawingTextRef.current = lessonDrawingTextBySlide;
   }, [lessonDrawingTextBySlide]);
+  const lessonResponseTextRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    lessonResponseTextRef.current = lessonResponseTextBySlide;
+  }, [lessonResponseTextBySlide]);
   const lessonDrawingPathRef = useRef<Record<string, string>>({});
   useEffect(() => {
     lessonDrawingPathRef.current = lessonDrawingPathBySlide;
@@ -154,6 +159,10 @@ export default function Home() {
       if (slideId && slideWork) {
         if (typeof slideWork.responseText === "string") {
           setLessonResponseText(slideWork.responseText);
+          setLessonResponseTextBySlide((prev) => {
+            if ((prev[slideId] || "") === slideWork.responseText) return prev;
+            return { ...prev, [slideId]: slideWork.responseText || "" };
+          });
         }
         if (typeof slideWork.drawingText === "string") {
           setLessonDrawingTextBySlide((prev) => {
@@ -203,6 +212,10 @@ export default function Home() {
     );
     if (!res.ok) {
       setLessonResponseText("");
+      setLessonResponseTextBySlide((prev) => {
+        if ((prev[slideId] || "") === "") return prev;
+        return { ...prev, [slideId]: "" };
+      });
       setLessonChoiceValue("");
       setLessonChoiceExplain("");
       return;
@@ -210,6 +223,10 @@ export default function Home() {
     const json = await res.json();
     const responseText = json.response || "";
     setLessonResponseText(responseText);
+    setLessonResponseTextBySlide((prev) => {
+      if ((prev[slideId] || "") === responseText) return prev;
+      return { ...prev, [slideId]: responseText };
+    });
     const drawingText = typeof json?.drawingText === "string" ? json.drawingText : "";
     setLessonDrawingTextBySlide((prev) => {
       if ((prev[slideId] || "") === drawingText) return prev;
@@ -391,6 +408,16 @@ export default function Home() {
     }));
   };
 
+  const handleLessonResponseTextChange = (next: string) => {
+    setLessonResponseText(next);
+    const slideId = lessonStateRef.current?.currentSlideId;
+    if (!slideId) return;
+    setLessonResponseTextBySlide((prev) => {
+      if ((prev[slideId] || "") === next) return prev;
+      return { ...prev, [slideId]: next };
+    });
+  };
+
   useEffect(() => {
     loadLessonState(true);
   }, []);
@@ -451,6 +478,34 @@ export default function Home() {
   }, [
     lessonChoiceValue,
     lessonChoiceExplain,
+    lessonState?.session.id,
+    lessonState?.currentSlideId,
+    lessonState?.slideResponseType,
+    lessonState?.slideResponseConfig,
+  ]);
+
+  useEffect(() => {
+    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
+    const responseType = lessonState.slideResponseType || "text";
+    const widgets = lessonState.slideResponseConfig?.widgets || (
+      responseType === "both" ? ["text", "drawing"] : [responseType]
+    );
+    // Choice widgets have their own serialization/autosave flow.
+    if (!widgets.includes("text") || widgets.includes("choice")) return;
+    if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
+    lessonResponseTimerRef.current = setTimeout(() => {
+      saveLessonResponse(
+        lessonState.session.id,
+        lessonState.currentSlideId!,
+        responseType,
+        lessonResponseText || ""
+      );
+    }, 700);
+    return () => {
+      if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
+    };
+  }, [
+    lessonResponseText,
     lessonState?.session.id,
     lessonState?.currentSlideId,
     lessonState?.slideResponseType,
@@ -614,10 +669,29 @@ export default function Home() {
       const lessonState = lessonStateRef.current;
       const isLesson = activeExperienceRef.current === "lesson" && !!lessonState;
       const drawingTextMap = lessonDrawingTextRef.current || {};
+      const responseTextMap = lessonResponseTextRef.current || {};
+      const currentSlideResponseText =
+        lessonState?.currentSlideId && responseTextMap[lessonState.currentSlideId]
+          ? responseTextMap[lessonState.currentSlideId]
+          : lessonState?.slideWork?.responseText || "";
       const drawingTextSummary = (() => {
         if (!lessonState?.slides?.length) return "";
         const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
         const entries = Object.entries(drawingTextMap)
+          .filter(([, text]) => text && text.trim().length > 0)
+          .sort((a, b) => (byIndex.get(a[0]) || 0) - (byIndex.get(b[0]) || 0))
+          .slice(0, 12)
+          .map(([id, text]) => {
+            const idx = byIndex.get(id) || "?";
+            const cleaned = text.replace(/\s+/g, " ").trim();
+            return `Slide ${idx}: ${cleaned.slice(0, 200)}`;
+          });
+        return entries.length ? entries.join("\n") : "None.";
+      })();
+      const responseTextSummary = (() => {
+        if (!lessonState?.slides?.length) return "";
+        const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
+        const entries = Object.entries(responseTextMap)
           .filter(([, text]) => text && text.trim().length > 0)
           .sort((a, b) => (byIndex.get(a[0]) || 0) - (byIndex.get(b[0]) || 0))
           .slice(0, 12)
@@ -663,6 +737,12 @@ export default function Home() {
 
             PACING MODE: ${lessonState?.session.mode || "instructor"}
 
+            STUDENT TYPED RESPONSE (current slide):
+            ${currentSlideResponseText ? currentSlideResponseText.slice(0, 800) : "None."}
+
+            STUDENT TYPED RESPONSES (other slides):
+            ${responseTextSummary}
+
             STUDENT DRAWING TEXT (from annotations on the slide):
             ${lessonState?.currentSlideId && drawingTextMap[lessonState.currentSlideId]
               ? drawingTextMap[lessonState.currentSlideId].slice(0, 800)
@@ -677,8 +757,9 @@ export default function Home() {
             - If the student asks for answers, guide them with hints and questions instead.
             - If the student asks to move slides and pacing is instructor, tell them the teacher controls it.
             - If the student asks what slide they are on, answer exactly: "You're on slide ${lessonState?.currentSlideIndex || 1}."
+            - You are given student typed responses. Use them when present.
             - You are given student annotation text in STUDENT DRAWING TEXT. Use it when present.
-            - Never claim you cannot see what the student typed if STUDENT DRAWING TEXT is not "None.".
+            - Never claim you cannot see what the student typed if STUDENT TYPED RESPONSE is not "None.".
 
             GLOBAL TEACHER PROMPT:
             ${globalPrompt || "None."}`,
@@ -1248,46 +1329,82 @@ export default function Home() {
                                     ? ["text", "drawing"]
                                     : [responseType || "text"]
                                 );
-                                if (!widgets.includes("choice")) return null;
+                                const showChoice = widgets.includes("choice");
+                                const showText = widgets.includes("text") && !showChoice;
                                 const choices = lessonState.slideResponseConfig?.choices || [];
                                 const multi = !!lessonState.slideResponseConfig?.multi;
                                 const explain = !!lessonState.slideResponseConfig?.explain;
                                 const disabled = !!lessonState.session?.isFrozen;
                                 if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
                                 return (
-                                  <LessonChoiceWidget
-                                    choices={choices}
-                                    multi={multi}
-                                    value={lessonChoiceValue}
-                                    explain={explain}
-                                    explainValue={lessonChoiceExplain}
-                                    onExplainChange={setLessonChoiceExplain}
-                                    saving={lessonResponseSaving}
-                                    onChange={setLessonChoiceValue}
-                                    disabled={disabled}
-                                    onSubmit={() =>
-                                      saveLessonResponse(
-                                        lessonState.session.id,
-                                        lessonState.currentSlideId!,
-                                        responseType,
-                                        explain
-                                          ? JSON.stringify({
-                                              selection: multi
-                                                ? (() => {
-                                                    try {
-                                                      const parsed = JSON.parse(lessonChoiceValue);
-                                                      return Array.isArray(parsed) ? parsed : [];
-                                                    } catch {
-                                                      return [];
-                                                    }
-                                                  })()
-                                                : lessonChoiceValue,
-                                              explain: lessonChoiceExplain || "",
-                                            })
-                                          : lessonChoiceValue
-                                      )
-                                    }
-                                  />
+                                  <>
+                                    {showChoice ? (
+                                      <LessonChoiceWidget
+                                        choices={choices}
+                                        multi={multi}
+                                        value={lessonChoiceValue}
+                                        explain={explain}
+                                        explainValue={lessonChoiceExplain}
+                                        onExplainChange={setLessonChoiceExplain}
+                                        saving={lessonResponseSaving}
+                                        onChange={setLessonChoiceValue}
+                                        disabled={disabled}
+                                        onSubmit={() =>
+                                          saveLessonResponse(
+                                            lessonState.session.id,
+                                            lessonState.currentSlideId!,
+                                            responseType,
+                                            explain
+                                              ? JSON.stringify({
+                                                  selection: multi
+                                                    ? (() => {
+                                                        try {
+                                                          const parsed = JSON.parse(lessonChoiceValue);
+                                                          return Array.isArray(parsed) ? parsed : [];
+                                                        } catch {
+                                                          return [];
+                                                        }
+                                                      })()
+                                                    : lessonChoiceValue,
+                                                  explain: lessonChoiceExplain || "",
+                                                })
+                                              : lessonChoiceValue
+                                          )
+                                        }
+                                      />
+                                    ) : null}
+                                    {showText ? (
+                                      <div className="rounded-xl border border-zinc-200 bg-white p-3">
+                                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                                          Response
+                                        </div>
+                                        <textarea
+                                          value={lessonResponseText}
+                                          onChange={(e) => handleLessonResponseTextChange(e.target.value)}
+                                          disabled={disabled}
+                                          className="h-28 w-full rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-zinc-400"
+                                          placeholder="Type your response for this slide..."
+                                        />
+                                        <div className="mt-2 flex items-center justify-end">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              saveLessonResponse(
+                                                lessonState.session.id,
+                                                lessonState.currentSlideId!,
+                                                responseType,
+                                                lessonResponseText || ""
+                                              )
+                                            }
+                                            disabled={disabled || lessonResponseSaving}
+                                            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                                          >
+                                            {lessonResponseSaving ? "Saving..." : "Save"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </>
                                 );
                               })()}
                             <div className="flex-1 min-h-0">
