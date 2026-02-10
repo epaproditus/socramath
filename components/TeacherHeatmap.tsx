@@ -219,6 +219,75 @@ export default function TeacherHeatmap() {
     }
   };
 
+  const setManualAssessment = async (payload: {
+    slideId: string;
+    studentId: string;
+    label: AssessmentLabel;
+    mode: "cell" | "student";
+  }) => {
+    if (!data?.session?.id) return;
+    setAssessmentError(null);
+    setAssessmentLoading(payload.mode);
+    try {
+      const res = await fetch("/api/lesson-assessment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: data.session.id,
+          slideId: payload.slideId,
+          studentId: payload.studentId,
+          label: payload.label,
+          reason: "Manual override.",
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to update assessment");
+      }
+      await load();
+    } catch (err: unknown) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "Failed to update assessment";
+      setAssessmentError(message || "Failed to update assessment");
+    } finally {
+      setAssessmentLoading(null);
+    }
+  };
+
+  const renderOverrideButtons = (payload: { slideId: string; studentId: string; mode: "cell" | "student" }) => (
+    <div className="flex items-center gap-1">
+      <span className="text-[11px] text-zinc-500">Set:</span>
+      {(["green", "yellow", "red", "grey"] as AssessmentLabel[]).map((label) => (
+        <button
+          key={`${payload.studentId}-${payload.slideId}-${label}`}
+          type="button"
+          className={`h-7 rounded-full border px-2 text-[11px] font-semibold ${
+            label === "green"
+              ? "border-emerald-300 bg-emerald-100 text-emerald-700"
+              : label === "yellow"
+                ? "border-amber-300 bg-amber-100 text-amber-700"
+                : label === "red"
+                  ? "border-rose-300 bg-rose-100 text-rose-700"
+                  : "border-zinc-300 bg-zinc-100 text-zinc-600"
+          }`}
+          onClick={() =>
+            setManualAssessment({
+              slideId: payload.slideId,
+              studentId: payload.studentId,
+              label,
+              mode: payload.mode,
+            })
+          }
+          disabled={assessmentLoading === payload.mode}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   const remainingSeconds = useMemo(() => {
     if (!data?.session) return 0;
     if (data.session.timerRunning && data.session.timerEndsAt) {
@@ -561,6 +630,11 @@ export default function TeacherHeatmap() {
                 >
                   {assessmentLoading === "cell" ? "Assessing..." : "Assess"}
                 </button>
+                {renderOverrideButtons({
+                  slideId: selectedCell.slideId,
+                  studentId: selectedCell.studentId,
+                  mode: "cell",
+                })}
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
@@ -811,6 +885,15 @@ export default function TeacherHeatmap() {
                 >
                   {assessmentLoading === "student" ? "Assessing..." : "Assess This Slide"}
                 </button>
+                {(() => {
+                  const selected = slides.find((slide) => slide.index === studentSlideIndex);
+                  if (!selected) return null;
+                  return renderOverrideButtons({
+                    slideId: selected.id,
+                    studentId: selectedStudent.studentId,
+                    mode: "student",
+                  });
+                })()}
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => fetchSummary({ studentId: selectedStudent.studentId })}

@@ -323,6 +323,8 @@ export async function POST(req: Request) {
   const sessionId = body?.sessionId as string | undefined;
   const slideId = body?.slideId as string | undefined;
   const requestedStudentId = body?.studentId as string | undefined;
+  const requestedLabel = body?.label as AssessmentLabel | undefined;
+  const requestedReason = body?.reason as string | undefined;
   const studentId = isAdmin ? requestedStudentId : session.user.id;
   if (!sessionId || !slideId) {
     return new NextResponse("Missing sessionId or slideId", { status: 400 });
@@ -340,6 +342,42 @@ export async function POST(req: Request) {
   const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
   if (!slide || slide.lessonId !== lessonSession.lessonId) {
     return new NextResponse("Slide not found for session lesson", { status: 404 });
+  }
+
+  if (requestedLabel) {
+    await ensureAssessmentTable();
+    await upsertAssessment({
+      sessionId,
+      slideId,
+      userId: studentId || session.user.id,
+      label: sanitizeLabel(requestedLabel),
+      reason: trimText(
+        typeof requestedReason === "string" && requestedReason.trim()
+          ? requestedReason.trim()
+          : "Manual override.",
+        200
+      ),
+      source: isAdmin ? "teacher" : "student",
+    });
+    emitRealtime("lesson:update", {
+      sessionId,
+      lessonId: lessonSession.lessonId,
+      source: "lesson-assessment",
+    });
+    return NextResponse.json({
+      ok: true,
+      updated: 1,
+      assessments: [
+        {
+          key: `${studentId || session.user.id}:${slideId}`,
+          label: sanitizeLabel(requestedLabel),
+          reason:
+            typeof requestedReason === "string" && requestedReason.trim()
+              ? requestedReason.trim().slice(0, 200)
+              : "Manual override.",
+        },
+      ],
+    });
   }
   const promptParts = extractPromptParts(slide.prompt || "", slide.text || "");
   const rubricText = parseRubric(slide.rubric || null);
@@ -612,23 +650,13 @@ Rules:
 
     llmRatings = evaluable.map((entry) => {
       const found = ratingByStudent.get(entry.studentId);
-      const candidate = found || {
-        studentId: entry.studentId,
-        label: "yellow",
-        reason: "Partial evidence; needs clearer reasoning.",
-      };
-      if (
-        candidate.label === "green" &&
-        entry.coverage.total >= 2 &&
-        entry.coverage.addressed < entry.coverage.total
-      ) {
-        return {
-          ...candidate,
-          label: "yellow" as AssessmentLabel,
-          reason: `Partial coverage: ${entry.coverage.addressed}/${entry.coverage.total} parts addressed.`,
-        };
-      }
-      return candidate;
+      return (
+        found || {
+          studentId: entry.studentId,
+          label: "yellow",
+          reason: "Partial evidence; needs clearer reasoning.",
+        }
+      );
     });
   }
 
