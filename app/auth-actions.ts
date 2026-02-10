@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 export async function signInWithCredentialsAction(formData: FormData) {
     const email = String(formData.get("email") || "");
     const password = String(formData.get("password") || "");
-    const headerList = headers();
+    const headerList = await headers();
     const host = headerList.get("x-forwarded-host") || headerList.get("host") || "";
     const proto = headerList.get("x-forwarded-proto") || "http";
     const baseUrl = host ? `${proto}://${host}` : "";
