@@ -17,6 +17,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { getRealtimeSocket } from "@/lib/realtime-client";
+import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 
 type HeatmapPayload = {
   lesson: { id: string; title: string; pageCount: number };
@@ -33,7 +34,14 @@ type HeatmapPayload = {
   slides: { id: string; index: number }[];
   students: { id: string; name: string; email?: string | null; classPeriod?: string | null }[];
   states?: { userId: string; currentSlideIndex: number; updatedAt?: string }[];
-  responses: { key: string; response: string; drawingPath: string; drawingText?: string; updatedAt: string }[];
+  responses: {
+    key: string;
+    response: string;
+    drawingPath: string;
+    drawingText?: string;
+    drawingSnapshot?: string | null;
+    updatedAt: string;
+  }[];
   assessments?: { key: string; label: AssessmentLabel; reason?: string; updatedAt?: string }[];
 };
 
@@ -341,7 +349,13 @@ export default function TeacherHeatmap() {
   };
 
   const responsesMap = useMemo(() => {
-    const map = new Map<string, { response: string; drawingPath: string; updatedAt: string }>();
+    const map = new Map<string, {
+      response: string;
+      drawingPath: string;
+      drawingText?: string;
+      drawingSnapshot?: string | null;
+      updatedAt: string;
+    }>();
     data?.responses.forEach((r) => map.set(r.key, r));
     return map;
   }, [data?.responses]);
@@ -890,27 +904,65 @@ export default function TeacherHeatmap() {
                     );
                   }}
                 >
-                  {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath ? (
-                    <div
-                      className="min-h-full min-w-full flex items-start justify-center"
-                      style={{
-                        transform: `scale(${zoom})`,
-                        transformOrigin: "top left",
-                      }}
-                    >
-                      <img
-                        src={`${responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath}?v=${encodeURIComponent(
-                          responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
-                        )}`}
-                        alt="Student drawing"
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                      No drawing yet.
-                    </div>
-                  )}
+                  {(() => {
+                    const cell = responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`);
+                    const slideDigits = String(data?.lesson?.pageCount || slides.length || 1).length;
+                    const slideFilename = `${String(selectedCell.slideIndex).padStart(slideDigits, "0")}.png`;
+                    const slideImageUrl = data?.lesson?.id
+                      ? `/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
+                          selectedCell.slideId
+                        )}`
+                      : "";
+                    let snapshot: Record<string, unknown> | undefined;
+                    if (cell?.drawingSnapshot && typeof cell.drawingSnapshot === "string") {
+                      try {
+                        snapshot = JSON.parse(cell.drawingSnapshot) as Record<string, unknown>;
+                      } catch {
+                        snapshot = undefined;
+                      }
+                    }
+                    if (snapshot && slideImageUrl) {
+                      return (
+                        <div
+                          className="min-h-full min-w-full flex items-start justify-center"
+                          style={{
+                            transform: `scale(${zoom})`,
+                            transformOrigin: "top left",
+                          }}
+                        >
+                          <div className="h-full w-full">
+                            <LessonExcalidrawOverlay
+                              imageUrl={slideImageUrl}
+                              readOnly
+                              sceneData={{ snapshot }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (cell?.drawingPath) {
+                      return (
+                        <div
+                          className="min-h-full min-w-full flex items-start justify-center"
+                          style={{
+                            transform: `scale(${zoom})`,
+                            transformOrigin: "top left",
+                          }}
+                        >
+                          <img
+                            src={`${cell.drawingPath}?v=${encodeURIComponent(cell.updatedAt || "")}`}
+                            alt="Student drawing"
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                        No drawing yet.
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1187,9 +1239,43 @@ export default function TeacherHeatmap() {
                       ? responsesMap.get(`${selectedStudent.studentId}:${slide.id}`)
                       : undefined;
                     const drawingPath = cell?.drawingPath || "";
+                    const slideDigits = String(data?.lesson?.pageCount || slides.length || 1).length;
+                    const slideFilename = `${String(studentSlideIndex).padStart(slideDigits, "0")}.png`;
+                    const slideImageUrl = data?.lesson?.id
+                      ? `/uploads/lessons/${data.lesson.id}/slides/${slideFilename}?v=${encodeURIComponent(
+                          slide?.id || ""
+                        )}`
+                      : "";
+                    let snapshot: Record<string, unknown> | undefined;
+                    if (cell?.drawingSnapshot && typeof cell.drawingSnapshot === "string") {
+                      try {
+                        snapshot = JSON.parse(cell.drawingSnapshot) as Record<string, unknown>;
+                      } catch {
+                        snapshot = undefined;
+                      }
+                    }
+                    if (snapshot && slideImageUrl) {
+                      return (
+                        <div
+                          className="min-h-full min-w-full flex items-start justify-center"
+                          style={{
+                            transform: `scale(${zoom})`,
+                            transformOrigin: "top left",
+                          }}
+                        >
+                          <div className="h-full w-full">
+                            <LessonExcalidrawOverlay
+                              imageUrl={slideImageUrl}
+                              readOnly
+                              sceneData={{ snapshot }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
                     return drawingPath ? (
                       <div
-                        className="h-full w-full"
+                        className="min-h-full min-w-full flex items-start justify-center"
                         style={{
                           transform: `scale(${zoom})`,
                           transformOrigin: "top left",
@@ -1198,7 +1284,7 @@ export default function TeacherHeatmap() {
                         <img
                           src={`${drawingPath}?v=${encodeURIComponent(cell?.updatedAt || "")}`}
                           alt="Student drawing"
-                          className="h-full w-auto object-contain"
+                          className="max-h-full max-w-full object-contain"
                         />
                       </div>
                     ) : (

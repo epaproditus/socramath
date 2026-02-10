@@ -141,6 +141,7 @@ export async function GET() {
     response: string;
     drawingPath: string;
     drawingText: string;
+    drawingSnapshot: string | null;
     updatedAt: string;
   }>();
   for (const response of responses) {
@@ -148,6 +149,7 @@ export async function GET() {
       response: response.response || "",
       drawingPath: response.drawingPath || "",
       drawingText: "",
+      drawingSnapshot: null,
       updatedAt: response.updatedAt.toISOString(),
     });
   }
@@ -157,10 +159,16 @@ export async function GET() {
     if (existing && new Date(existing.updatedAt).getTime() > studentState.updatedAt.getTime()) {
       continue;
     }
+    const snapshotValue = studentState.drawingSnapshot;
+    let snapshot: string | null = null;
+    if (typeof snapshotValue === "string" && snapshotValue.trim()) {
+      snapshot = snapshotValue;
+    }
     cellMap.set(key, {
       response: studentState.responseText || existing?.response || "",
       drawingPath: studentState.drawingPath || existing?.drawingPath || "",
       drawingText: studentState.drawingText || "",
+      drawingSnapshot: snapshot ?? existing?.drawingSnapshot ?? null,
       updatedAt: studentState.updatedAt.toISOString(),
     });
   }
