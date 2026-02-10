@@ -27,6 +27,36 @@ const parseRubric = (raw: string | null) => {
   return raw.slice(0, 1000);
 };
 
+const normalizeTypedResponse = (raw: string) => {
+  const text = raw.trim();
+  if (!text) return "";
+  try {
+    const parsed = JSON.parse(text) as { selection?: unknown; explain?: unknown } | unknown;
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as { selection?: unknown; explain?: unknown };
+      const parts: string[] = [];
+      if (Array.isArray(record.selection)) {
+        const values = record.selection.map((item) => String(item || "").trim()).filter(Boolean);
+        if (values.length) parts.push(`selection: ${values.join(", ")}`);
+      } else if (typeof record.selection === "string" && record.selection.trim()) {
+        parts.push(`selection: ${record.selection.trim()}`);
+      }
+      if (typeof record.explain === "string" && record.explain.trim()) {
+        parts.push(`explain: ${record.explain.trim()}`);
+      }
+      if (parts.length) return parts.join(" | ");
+    }
+  } catch {
+    // plain text response
+  }
+  return text;
+};
+
+const hasSubstantiveEvidence = (context: {
+  responseText: string;
+  drawingText: string;
+}) => !!normalizeTypedResponse(context.responseText) || !!context.drawingText.trim();
+
 const completeSummary = async ({
   baseUrl,
   apiKey,
@@ -162,22 +192,22 @@ export async function POST(req: Request) {
       (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
     );
 
-    const textCount = contexts.filter((c) => c.responseText.trim().length > 0).length;
+    const substantiveContexts = contexts.filter(hasSubstantiveEvidence);
+    const textCount = contexts.filter((c) => normalizeTypedResponse(c.responseText).length > 0).length;
     const drawingTextCount = contexts.filter((c) => c.drawingText.trim().length > 0).length;
-    const drawingOnlyCount = contexts.filter(
+    const artifactOnlyCount = contexts.filter(
       (c) => !!c.drawingPath && !c.responseText.trim() && !c.drawingText.trim()
     ).length;
+    const emptyCount = contexts.length - substantiveContexts.length - artifactOnlyCount;
 
-    const textSamples = contexts.slice(0, 16).map((context) => {
+    const textSamples = substantiveContexts.slice(0, 16).map((context) => {
       const parts: string[] = [];
-      if (context.responseText.trim()) {
-        parts.push(`typed: ${trimText(context.responseText, 220)}`);
+      const normalizedTypedResponse = normalizeTypedResponse(context.responseText);
+      if (normalizedTypedResponse) {
+        parts.push(`typed: ${trimText(normalizedTypedResponse, 220)}`);
       }
       if (context.drawingText.trim()) {
         parts.push(`drawing text: ${trimText(context.drawingText, 220)}`);
-      }
-      if (!parts.length && context.drawingPath) {
-        parts.push("drawing submitted (no extracted text)");
       }
       return `- ${context.name}: ${parts.join(" | ") || "No work yet"}`;
     });
@@ -185,6 +215,8 @@ export async function POST(req: Request) {
     const system = `You summarize a class's progress on a single slide.
 Output 4-6 bullet points. Focus on common misconceptions, progress, and who might need help.
 Do not reveal final answers. Do not include student names. If there's not enough data, say so plainly.
+Treat image-only artifacts (drawing path with no typed/drawing text) as non-evidence.
+Do not infer understanding, participation, or misconceptions from artifact-only entries.
 Keep it concise and teacher-friendly.`;
 
     const user = [
@@ -194,12 +226,14 @@ Keep it concise and teacher-friendly.`;
       `Slide text: ${slide?.text ? slide.text.slice(0, 600) : "None"}`,
       `Rubric: ${parseRubric(slide?.rubric || null)}`,
       `Response type: ${slide?.responseType || "text"}`,
-      `Total active students with work: ${contexts.length}`,
+      `Total students seen: ${contexts.length}`,
+      `Students with substantive evidence: ${substantiveContexts.length}`,
       `Text responses: ${textCount}`,
       `Drawing text snippets: ${drawingTextCount}`,
-      `Drawing-only responses: ${drawingOnlyCount}`,
-      `Sample responses:`,
-      ...(textSamples.length ? textSamples : ["- (No text responses yet)"]),
+      `Artifact-only entries (image path without text evidence): ${artifactOnlyCount}`,
+      `No-evidence entries: ${emptyCount}`,
+      `Sample evidence:`,
+      ...(textSamples.length ? textSamples : ["- (No substantive evidence yet)"]),
     ].join("\n");
 
     let summary = "";
@@ -279,6 +313,10 @@ Keep it concise and teacher-friendly.`;
     const contexts = Array.from(contextBySlide.values())
       .sort((a, b) => a.slideIndex - b.slideIndex || b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, 16);
+    const substantiveContexts = contexts.filter(hasSubstantiveEvidence);
+    const artifactOnlyCount = contexts.filter(
+      (c) => !!c.drawingPath && !c.responseText.trim() && !c.drawingText.trim()
+    ).length;
 
     const name =
       contexts[0]?.name ||
@@ -287,25 +325,28 @@ Keep it concise and teacher-friendly.`;
       studentStates[0]?.user?.name ||
       studentStates[0]?.user?.email ||
       "Student";
-    const samples = contexts.map((context) => {
+    const samples = substantiveContexts.map((context) => {
       const parts: string[] = [];
-      if (context.responseText.trim()) parts.push(`typed: ${trimText(context.responseText, 180)}`);
+      const normalizedTypedResponse = normalizeTypedResponse(context.responseText);
+      if (normalizedTypedResponse) parts.push(`typed: ${trimText(normalizedTypedResponse, 180)}`);
       if (context.drawingText.trim()) parts.push(`drawing text: ${trimText(context.drawingText, 180)}`);
-      if (!parts.length && context.drawingPath) parts.push("drawing submitted (no extracted text)");
-      if (!parts.length) parts.push("no work yet");
-      return `- Slide ${context.slideIndex || "?"} (prompt: ${trimText(context.prompt || "No prompt", 140)}): ${parts.join(" | ")}`;
+      return `- Slide ${context.slideIndex || "?"} (prompt: ${trimText(context.prompt || "No prompt", 140)}): ${parts.join(" | ") || "no work yet"}`;
     });
 
     const system = `You summarize a single student's progress across multiple slides.
 Output 4-6 bullet points. Focus on strengths, misconceptions, and next steps.
-Do not reveal final answers. Keep it concise and teacher-friendly.`;
+Do not reveal final answers. Keep it concise and teacher-friendly.
+Treat image-only artifacts (drawing path with no typed/drawing text) as non-evidence.
+Do not infer understanding, participation, or misconceptions from artifact-only entries.`;
 
     const user = [
       `Lesson: ${lessonSession.lesson.title}`,
       `Student: ${name}`,
-      `Total slides with work: ${contexts.length}`,
-      `Recent responses:`,
-      ...(samples.length ? samples : ["- (No responses yet)"]),
+      `Total observed slides: ${contexts.length}`,
+      `Slides with substantive evidence: ${substantiveContexts.length}`,
+      `Artifact-only slides (image path without text evidence): ${artifactOnlyCount}`,
+      `Recent evidence:`,
+      ...(samples.length ? samples : ["- (No substantive evidence yet)"]),
     ].join("\n");
 
     let summary = "";
