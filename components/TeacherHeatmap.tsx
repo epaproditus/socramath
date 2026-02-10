@@ -1,7 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Filter, Hand, Snowflake, Download, Shrink, Glasses, CheckCircle2, List, Timer } from "lucide-react";
+import {
+  Filter,
+  Hand,
+  Snowflake,
+  Download,
+  Shrink,
+  Glasses,
+  CheckCircle2,
+  List,
+  Timer,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { getRealtimeSocket } from "@/lib/realtime-client";
 
 type HeatmapPayload = {
@@ -383,6 +397,30 @@ export default function TeacherHeatmap() {
     }
   }, [selectedStudent?.studentId]);
 
+  useEffect(() => {
+    if (!selectedCell) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        jumpStudentBy(-1);
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        jumpStudentBy(1);
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        jumpSlideBy(-1);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        jumpSlideBy(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCell, jumpStudentBy, jumpSlideBy]);
+
   const students = useMemo(() => {
     if (!data?.students) return [];
     const sorted = [...data.students];
@@ -437,6 +475,59 @@ export default function TeacherHeatmap() {
       students: groupStudents,
     }));
   }, [students]);
+
+  const orderedStudents = useMemo(() => {
+    return studentGroups.flatMap((group) => group.students);
+  }, [studentGroups]);
+
+  const jumpToStudent = useCallback(
+    (nextIndex: number) => {
+      if (!orderedStudents.length || !selectedCell) return;
+      const clamped = Math.max(0, Math.min(nextIndex, orderedStudents.length - 1));
+      const nextStudent = orderedStudents[clamped];
+      setSelectedCell({
+        studentId: nextStudent.id,
+        studentName: nextStudent.name,
+        slideId: selectedCell.slideId,
+        slideIndex: selectedCell.slideIndex,
+      });
+    },
+    [orderedStudents, selectedCell]
+  );
+
+  const jumpToSlide = useCallback(
+    (nextSlideIndex: number) => {
+      if (!slides.length || !selectedCell) return;
+      const clamped = Math.max(1, Math.min(nextSlideIndex, slides[slides.length - 1].index));
+      const nextSlide = slides.find((slide) => slide.index === clamped);
+      if (!nextSlide) return;
+      setSelectedCell({
+        studentId: selectedCell.studentId,
+        studentName: selectedCell.studentName,
+        slideId: nextSlide.id,
+        slideIndex: nextSlide.index,
+      });
+    },
+    [slides, selectedCell]
+  );
+
+  const jumpStudentBy = useCallback(
+    (delta: number) => {
+      if (!selectedCell) return;
+      const currentIndex = orderedStudents.findIndex((student) => student.id === selectedCell.studentId);
+      if (currentIndex === -1) return;
+      jumpToStudent(currentIndex + delta);
+    },
+    [orderedStudents, selectedCell, jumpToStudent]
+  );
+
+  const jumpSlideBy = useCallback(
+    (delta: number) => {
+      if (!selectedCell) return;
+      jumpToSlide(selectedCell.slideIndex + delta);
+    },
+    [selectedCell, jumpToSlide]
+  );
 
   const selectedCellAssessment = selectedCell
     ? assessmentMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)
@@ -699,6 +790,36 @@ export default function TeacherHeatmap() {
                   studentId: selectedCell.studentId,
                   mode: "cell",
                 })}
+                <div className="flex items-center gap-1 ml-1">
+                  <button
+                    className="rounded-full border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                    onClick={() => jumpStudentBy(-1)}
+                    title="Previous student"
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="rounded-full border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                    onClick={() => jumpStudentBy(1)}
+                    title="Next student"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="rounded-full border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                    onClick={() => jumpSlideBy(-1)}
+                    title="Previous problem"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="rounded-full border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                    onClick={() => jumpSlideBy(1)}
+                    title="Next problem"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
@@ -771,7 +892,7 @@ export default function TeacherHeatmap() {
                 >
                   {responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.drawingPath ? (
                     <div
-                      className="h-full w-full"
+                      className="min-h-full min-w-full flex items-start justify-center"
                       style={{
                         transform: `scale(${zoom})`,
                         transformOrigin: "top left",
@@ -782,7 +903,7 @@ export default function TeacherHeatmap() {
                           responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)?.updatedAt || ""
                         )}`}
                         alt="Student drawing"
-                        className="h-full w-auto object-contain"
+                        className="max-h-full max-w-full object-contain"
                       />
                     </div>
                   ) : (
