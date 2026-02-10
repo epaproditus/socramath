@@ -3,6 +3,8 @@
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+type AssessmentLabel = "green" | "yellow" | "red" | "grey";
+
 type LessonStageProps = {
   lessonId: string;
   slideFilename: string;
@@ -15,6 +17,7 @@ type LessonStageProps = {
   onDrawingChange?: (dataUrl: string) => void;
   onDrawingTextChange?: (text: string) => void;
   readOnly?: boolean;
+  assessmentLabel?: AssessmentLabel;
   sceneData?: {
     snapshot?: Record<string, unknown>;
     elements?: unknown[];
@@ -41,11 +44,20 @@ export default function LessonStage({
   onDrawingChange,
   onDrawingTextChange,
   readOnly,
+  assessmentLabel,
   sceneData,
   onSceneChange,
 }: LessonStageProps) {
   const cacheParam = cacheKey ? `?v=${encodeURIComponent(cacheKey)}` : "";
   const slideImageUrl = `/uploads/lessons/${lessonId}/slides/${slideFilename}${cacheParam}`;
+  const slideBorderClass =
+    assessmentLabel === "green"
+      ? "border-emerald-400"
+      : assessmentLabel === "yellow"
+      ? "border-amber-400"
+      : assessmentLabel === "red"
+      ? "border-rose-400"
+      : "border-zinc-200";
   return (
     <div
       className="flex h-full w-full items-start justify-center p-4 overflow-y-auto"
@@ -60,12 +72,13 @@ export default function LessonStage({
             sceneData={sceneData}
             onSceneChange={onSceneChange}
             readOnly={readOnly}
+            borderClassName={slideBorderClass}
           />
         ) : (
           <img
             src={slideImageUrl}
             alt={`Slide ${currentSlideIndex}`}
-            className="w-full h-auto rounded-xl border border-zinc-200 object-contain bg-zinc-50"
+            className={`w-full h-auto rounded-xl border-2 ${slideBorderClass} object-contain bg-zinc-50`}
             onError={(e) => {
               const target = e.currentTarget;
               if (target.dataset.fallbackApplied === "1") return;

@@ -11,6 +11,7 @@ type LessonExcalidrawOverlayProps = {
   onTextChange?: (text: string) => void;
   onOcrText?: (text: string) => void;
   readOnly?: boolean;
+  borderClassName?: string;
   sceneData?: {
     elements?: unknown[];
     files?: Record<string, unknown>;
@@ -107,6 +108,7 @@ const LessonExcalidrawOverlay = forwardRef(function LessonExcalidrawOverlay(
     onTextChange,
     onOcrText,
     readOnly,
+    borderClassName,
     sceneData,
     onSceneChange,
   }: LessonExcalidrawOverlayProps,
@@ -292,7 +294,7 @@ const LessonExcalidrawOverlay = forwardRef(function LessonExcalidrawOverlay(
   return (
     <div
       ref={wrapperRef}
-      className="relative w-full rounded-xl border border-zinc-200 bg-zinc-50 overflow-visible min-h-[480px]"
+      className={`relative w-full rounded-xl border-2 ${borderClassName || "border-zinc-200"} bg-zinc-50 overflow-visible min-h-[480px]`}
     >
       <img
         ref={imageRef}

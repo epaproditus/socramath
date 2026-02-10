@@ -12,6 +12,8 @@ import LessonStage from "@/components/LessonStage";
 import LessonChoiceWidget from "@/components/LessonChoiceWidget";
 import { getRealtimeSocket } from "@/lib/realtime-client";
 
+type AssessmentLabel = "green" | "yellow" | "red" | "grey";
+
 type LessonState = {
   lesson: {
     id: string;
@@ -36,6 +38,11 @@ type LessonState = {
   slideRubric?: string[];
   slideResponseType?: string;
   slideResponseConfig?: Record<string, any>;
+  slideAssessment?: {
+    label?: AssessmentLabel;
+    reason?: string;
+    updatedAt?: string;
+  } | null;
   slideWork?: {
     responseText?: string;
     drawingPath?: string;
@@ -44,6 +51,27 @@ type LessonState = {
     updatedAt?: string;
   } | null;
   slides: { id: string; index: number }[];
+};
+
+const assessmentBorderClass = (label?: AssessmentLabel | null) => {
+  if (label === "green") return "border-emerald-400";
+  if (label === "yellow") return "border-amber-400";
+  if (label === "red") return "border-rose-400";
+  return "border-zinc-200";
+};
+
+const assessmentBadgeClass = (label?: AssessmentLabel | null) => {
+  if (label === "green") return "bg-emerald-100 text-emerald-700 border-emerald-300";
+  if (label === "yellow") return "bg-amber-100 text-amber-700 border-amber-300";
+  if (label === "red") return "bg-rose-100 text-rose-700 border-rose-300";
+  return "bg-zinc-100 text-zinc-600 border-zinc-300";
+};
+
+const assessmentLabelText = (label?: AssessmentLabel | null) => {
+  if (label === "green") return "Green";
+  if (label === "yellow") return "Yellow";
+  if (label === "red") return "Red";
+  return "Not Assessed";
 };
 
 export default function Home() {
@@ -83,6 +111,8 @@ export default function Home() {
   const [lessonChoiceValue, setLessonChoiceValue] = useState("");
   const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
   const [timerNow, setTimerNow] = useState(() => Date.now());
+  const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const prevFrozenRef = useRef(false);
   const drawingSceneSignatureRef = useRef<Record<string, string>>({});
 
@@ -416,6 +446,35 @@ export default function Home() {
       if ((prev[slideId] || "") === next) return prev;
       return { ...prev, [slideId]: next };
     });
+  };
+
+  const assessCurrentSlide = async () => {
+    if (!lessonState?.session?.id || !lessonState.currentSlideId) return;
+    setAssessmentError(null);
+    setAssessmentLoading(true);
+    try {
+      const res = await fetch("/api/lesson-assessment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: lessonState.session.id,
+          slideId: lessonState.currentSlideId,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to assess slide");
+      }
+      await loadLessonState();
+    } catch (err: unknown) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "Failed to assess slide";
+      setAssessmentError(message || "Failed to assess slide");
+    } finally {
+      setAssessmentLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -1248,6 +1307,7 @@ export default function Home() {
                           showDrawing={showDrawing}
                           readOnly={!!lessonState.session.isFrozen}
                           onDrawingChange={showDrawing ? handleDrawingChange : undefined}
+                          assessmentLabel={lessonState.slideAssessment?.label}
                           sceneData={slideSceneData}
                           onSceneChange={showDrawing ? handleDrawingSceneChange : undefined}
                           onDrawingTextChange={(text) => {
@@ -1335,9 +1395,46 @@ export default function Home() {
                                 const multi = !!lessonState.slideResponseConfig?.multi;
                                 const explain = !!lessonState.slideResponseConfig?.explain;
                                 const disabled = !!lessonState.session?.isFrozen;
+                                const assessmentLabel = lessonState.slideAssessment?.label || "grey";
                                 if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
                                 return (
                                   <>
+                                    <div
+                                      className={`rounded-xl border-2 bg-white p-3 ${assessmentBorderClass(
+                                        assessmentLabel
+                                      )}`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                                            Understanding Signal
+                                          </div>
+                                          <div
+                                            className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${assessmentBadgeClass(
+                                              assessmentLabel
+                                            )}`}
+                                          >
+                                            {assessmentLabelText(assessmentLabel)}
+                                          </div>
+                                          {lessonState.slideAssessment?.reason ? (
+                                            <div className="mt-1 line-clamp-2 text-[11px] text-zinc-500">
+                                              {lessonState.slideAssessment.reason}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={assessCurrentSlide}
+                                          disabled={assessmentLoading}
+                                          className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                                        >
+                                          {assessmentLoading ? "Assessing..." : "Assess"}
+                                        </button>
+                                      </div>
+                                      {assessmentError ? (
+                                        <div className="mt-2 text-[11px] text-red-600">{assessmentError}</div>
+                                      ) : null}
+                                    </div>
                                     {showChoice ? (
                                       <LessonChoiceWidget
                                         choices={choices}

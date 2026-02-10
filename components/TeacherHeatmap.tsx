@@ -20,10 +20,18 @@ type HeatmapPayload = {
   students: { id: string; name: string; email?: string | null }[];
   states?: { userId: string; currentSlideIndex: number }[];
   responses: { key: string; response: string; drawingPath: string; drawingText?: string; updatedAt: string }[];
-  assessments?: { key: string; label: "green" | "yellow" | "red" | "grey"; reason?: string; updatedAt?: string }[];
+  assessments?: { key: string; label: AssessmentLabel; reason?: string; updatedAt?: string }[];
 };
 
 type SortMode = "first" | "last" | "recent";
+type AssessmentLabel = "green" | "yellow" | "red" | "grey";
+
+const assessmentBorderClass = (label?: AssessmentLabel) => {
+  if (label === "green") return "border-emerald-400";
+  if (label === "yellow") return "border-amber-400";
+  if (label === "red") return "border-rose-400";
+  return "border-zinc-200";
+};
 
 export default function TeacherHeatmap() {
   const [data, setData] = useState<HeatmapPayload | null>(null);
@@ -255,7 +263,7 @@ export default function TeacherHeatmap() {
   }, [data?.responses]);
 
   const assessmentMap = useMemo(() => {
-    const map = new Map<string, { label: "green" | "yellow" | "red" | "grey"; reason?: string }>();
+    const map = new Map<string, { label: AssessmentLabel; reason?: string }>();
     data?.assessments?.forEach((assessment) => {
       map.set(assessment.key, { label: assessment.label, reason: assessment.reason || "" });
     });
@@ -323,6 +331,19 @@ export default function TeacherHeatmap() {
     }
     return sorted;
   }, [data?.students, sortMode, responsesMap, slides]);
+
+  const selectedCellAssessment = selectedCell
+    ? assessmentMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)
+    : undefined;
+  const selectedStudentActiveAssessment =
+    selectedStudent && studentSlideIndex !== null
+      ? (() => {
+          const activeSlide = slides.find((slide) => slide.index === studentSlideIndex);
+          return activeSlide
+            ? assessmentMap.get(`${selectedStudent.studentId}:${activeSlide.id}`)
+            : undefined;
+        })()
+      : undefined;
 
   if (error) {
     return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>;
@@ -565,7 +586,11 @@ export default function TeacherHeatmap() {
             </div>
 
             <div className="mt-4 flex-1 min-h-0 grid gap-5 lg:grid-cols-[300px_1fr]">
-              <aside className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm flex flex-col">
+              <aside
+                className={`rounded-2xl border-2 ${assessmentBorderClass(
+                  selectedCellAssessment?.label
+                )} bg-white p-3 shadow-sm flex flex-col`}
+              >
                 <div className="text-xs font-semibold uppercase text-zinc-500">Problem {selectedCell.slideIndex}</div>
                 <div className="mt-3 flex-1 overflow-auto">
                   {data?.lesson?.id ? (
@@ -588,10 +613,16 @@ export default function TeacherHeatmap() {
                 </div>
               </aside>
 
-              <div className="h-full rounded-2xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
+              <div
+                className={`h-full rounded-2xl border-2 ${assessmentBorderClass(
+                  selectedCellAssessment?.label
+                )} bg-zinc-50 p-3 flex flex-col min-h-0`}
+              >
                 <div className="text-xs font-semibold uppercase text-zinc-500">Live Work</div>
                 <div
-                  className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
+                  className={`mt-2 flex-1 min-h-0 overflow-auto rounded-xl border-2 ${assessmentBorderClass(
+                    selectedCellAssessment?.label
+                  )} bg-white`}
                   onWheel={(e) => {
                     if (!e.ctrlKey && !e.metaKey) return;
                     const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -705,11 +736,14 @@ export default function TeacherHeatmap() {
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {students.map((student) => {
                       const cell = responsesMap.get(`${student.id}:${selectedSlide.slideId}`);
+                      const assessment = assessmentMap.get(`${student.id}:${selectedSlide.slideId}`);
                       const drawingPath = cell?.drawingPath || "";
                       return (
                         <button
                           key={`slide-${selectedSlide.slideId}-${student.id}`}
-                          className="rounded-xl border border-zinc-200 bg-white p-3 text-left hover:border-zinc-300"
+                          className={`rounded-xl border-2 ${assessmentBorderClass(
+                            assessment?.label
+                          )} bg-white p-3 text-left hover:shadow-sm`}
                           onClick={() => {
                             setSelectedSlide(null);
                             setSelectedStudent({
@@ -721,7 +755,11 @@ export default function TeacherHeatmap() {
                           }}
                         >
                           <div className="text-xs font-semibold text-zinc-600">{student.name}</div>
-                          <div className="mt-2 h-40 rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden">
+                          <div
+                            className={`mt-2 h-40 rounded-lg border-2 ${assessmentBorderClass(
+                              assessment?.label
+                            )} bg-zinc-50 overflow-hidden`}
+                          >
                             {drawingPath ? (
                               <img
                                 src={`${drawingPath}?v=${encodeURIComponent(cell?.updatedAt || "")}`}
@@ -811,17 +849,24 @@ export default function TeacherHeatmap() {
                   {slides.map((slide) => {
                     const isActive = slide.index === studentSlideIndex;
                     const cell = responsesMap.get(`${selectedStudent.studentId}:${slide.id}`);
+                    const assessment = assessmentMap.get(`${selectedStudent.studentId}:${slide.id}`);
                     const drawingPath = cell?.drawingPath || "";
                     return (
                       <button
                         key={`student-${selectedStudent.studentId}-${slide.id}`}
-                        className={`w-full rounded-xl border p-2 text-left ${
-                          isActive ? "border-sky-400 bg-sky-50" : "border-zinc-200 hover:border-zinc-300"
+                        className={`w-full rounded-xl border-2 ${assessmentBorderClass(
+                          assessment?.label
+                        )} p-2 text-left ${
+                          isActive ? "bg-sky-50 ring-2 ring-sky-200" : "hover:shadow-sm"
                         }`}
                         onClick={() => setStudentSlideIndex(slide.index)}
                       >
                         <div className="text-xs font-semibold text-zinc-600">Problem {slide.index}</div>
-                        <div className="mt-2 h-24 rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden">
+                        <div
+                          className={`mt-2 h-24 rounded-lg border-2 ${assessmentBorderClass(
+                            assessment?.label
+                          )} bg-zinc-50 overflow-hidden`}
+                        >
                           {drawingPath ? (
                             <img
                               src={`${drawingPath}?v=${encodeURIComponent(cell?.updatedAt || "")}`}
@@ -840,7 +885,11 @@ export default function TeacherHeatmap() {
                 </div>
               </aside>
 
-              <div className="h-full rounded-2xl border border-zinc-200 bg-zinc-50 p-3 flex flex-col min-h-0">
+              <div
+                className={`h-full rounded-2xl border-2 ${assessmentBorderClass(
+                  selectedStudentActiveAssessment?.label
+                )} bg-zinc-50 p-3 flex flex-col min-h-0`}
+              >
                 <div className="text-xs font-semibold uppercase text-zinc-500">
                   Live Work · Problem {studentSlideIndex}
                 </div>
@@ -853,7 +902,9 @@ export default function TeacherHeatmap() {
                   <div className="mt-2 text-xs text-red-500">{summaryError}</div>
                 )}
                 <div
-                  className="mt-2 flex-1 min-h-0 overflow-auto rounded-xl border border-zinc-200 bg-white"
+                  className={`mt-2 flex-1 min-h-0 overflow-auto rounded-xl border-2 ${assessmentBorderClass(
+                    selectedStudentActiveAssessment?.label
+                  )} bg-white`}
                   onWheel={(e) => {
                     if (!e.ctrlKey && !e.metaKey) return;
                     const delta = e.deltaY > 0 ? -0.1 : 0.1;

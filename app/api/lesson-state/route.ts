@@ -7,6 +7,50 @@ const isMissingTableError = (err: unknown) =>
   err !== null &&
   "code" in err &&
   (err as { code?: string }).code === "P2021";
+const isReadonlyError = (err: unknown) =>
+  typeof err === "object" &&
+  err !== null &&
+  "message" in err &&
+  String((err as { message?: unknown }).message || "").toLowerCase().includes("readonly");
+
+type AssessmentRow = {
+  label: string;
+  reason: string | null;
+  updatedAt: string | number | Date;
+};
+
+const ensureAssessmentTable = async () => {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "LessonCellAssessment" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "sessionId" TEXT NOT NULL,
+      "slideId" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "label" TEXT NOT NULL,
+      "reason" TEXT,
+      "source" TEXT NOT NULL DEFAULT 'llm',
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "LessonCellAssessment_sessionId_slideId_userId_key"
+    ON "LessonCellAssessment"("sessionId","slideId","userId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LessonCellAssessment_sessionId_idx"
+    ON "LessonCellAssessment"("sessionId")
+  `);
+};
+
+const toIsoString = (value: string | number | Date | null | undefined) => {
+  if (value === null || value === undefined) return "";
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(typeof value === "number" ? value : String(value));
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+};
 
 
 export async function GET() {
@@ -145,6 +189,9 @@ export async function GET() {
   const slide = await prisma.lessonSlide.findFirst({
     where: { lessonId: lesson.id, index: currentSlideIndex },
   });
+  await ensureAssessmentTable().catch((err) => {
+    if (!isReadonlyError(err)) throw err;
+  });
   const slideWork =
     slide?.id
       ? await prisma.lessonStudentSlideState
@@ -157,6 +204,24 @@ export async function GET() {
               },
             },
           })
+          .catch((err) => {
+            if (isMissingTableError(err)) return null;
+            throw err;
+          })
+      : null;
+  const slideAssessment =
+    slide?.id
+      ? await prisma
+          .$queryRawUnsafe<AssessmentRow[]>(
+            `SELECT "label","reason","updatedAt"
+             FROM "LessonCellAssessment"
+             WHERE "sessionId" = ? AND "slideId" = ? AND "userId" = ?
+             LIMIT 1`,
+            lessonSession.id,
+            slide.id,
+            session.user.id
+          )
+          .then((rows) => rows[0] || null)
           .catch((err) => {
             if (isMissingTableError(err)) return null;
             throw err;
@@ -196,6 +261,13 @@ export async function GET() {
     slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
     slideResponseType: slide?.responseType || "text",
     slideResponseConfig: slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    slideAssessment: slideAssessment
+      ? {
+          label: slideAssessment.label,
+          reason: slideAssessment.reason || "",
+          updatedAt: toIsoString(slideAssessment.updatedAt),
+        }
+      : null,
     slideWork: slideWork
       ? {
           responseText: slideWork.responseText || "",

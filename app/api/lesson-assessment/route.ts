@@ -19,6 +19,7 @@ type Rating = {
   label: AssessmentLabel;
   reason: string;
 };
+type AssessmentSource = "teacher" | "student";
 
 const trimText = (value: string, max = 280) => value.replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -133,24 +134,26 @@ const upsertAssessment = async ({
   userId,
   label,
   reason,
+  source,
 }: {
   sessionId: string;
   slideId: string;
   userId: string;
   label: AssessmentLabel;
   reason: string;
+  source: AssessmentSource;
 }) => {
   const now = Date.now();
   await prisma.$executeRawUnsafe(
     `
       INSERT INTO "LessonCellAssessment"
       ("id","sessionId","slideId","userId","label","reason","source","createdAt","updatedAt")
-      VALUES (?, ?, ?, ?, ?, ?, 'llm', ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT("sessionId","slideId","userId")
       DO UPDATE SET
         "label"=excluded."label",
         "reason"=excluded."reason",
-        "source"='llm',
+        "source"=excluded."source",
         "updatedAt"=excluded."updatedAt"
     `,
     crypto.randomUUID(),
@@ -159,6 +162,7 @@ const upsertAssessment = async ({
     userId,
     label,
     reason,
+    source,
     now,
     now
   );
@@ -167,17 +171,22 @@ const upsertAssessment = async ({
 export async function POST(req: Request) {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
-
-  if (!session?.user?.email || !adminEmail || session.user.email !== adminEmail) {
+  if (!session?.user?.id) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
+  const isAdmin =
+    !!session.user.email && !!adminEmail && session.user.email === adminEmail;
 
   const body = await req.json();
   const sessionId = body?.sessionId as string | undefined;
   const slideId = body?.slideId as string | undefined;
-  const studentId = body?.studentId as string | undefined;
+  const requestedStudentId = body?.studentId as string | undefined;
+  const studentId = isAdmin ? requestedStudentId : session.user.id;
   if (!sessionId || !slideId) {
     return new NextResponse("Missing sessionId or slideId", { status: 400 });
+  }
+  if (!isAdmin && requestedStudentId && requestedStudentId !== session.user.id) {
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   const lessonSession = await prisma.lessonSession.findUnique({
@@ -241,10 +250,24 @@ export async function POST(req: Request) {
     });
   }
 
-  const contexts = Array.from(contextByUser.values());
-  if (!contexts.length) {
+  if (!contextByUser.size && !studentId) {
     return NextResponse.json({ ok: true, updated: 0, assessments: [] });
   }
+  if (studentId && !contextByUser.has(studentId)) {
+    const user = await prisma.user.findUnique({
+      where: { id: studentId },
+      select: { name: true, email: true },
+    });
+    contextByUser.set(studentId, {
+      userId: studentId,
+      name: user?.name || user?.email || session.user.name || session.user.email || "Student",
+      responseText: "",
+      drawingText: "",
+      drawingPath: "",
+      updatedAt: new Date(0),
+    });
+  }
+  const contexts = Array.from(contextByUser.values());
 
   await ensureAssessmentTable();
 
@@ -360,6 +383,7 @@ Rules:
       userId: rating.studentId,
       label: rating.label,
       reason: rating.reason,
+      source: isAdmin ? "teacher" : "student",
     });
   }
 
