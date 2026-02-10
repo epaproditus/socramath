@@ -571,7 +571,7 @@ export async function POST(req: Request) {
 
     const system = `You evaluate student understanding for one slide.
 Return strict JSON only:
-{"ratings":[{"studentId":"string","label":"green|yellow|red","reason":"string"}]}
+{"ratings":[{"studentId":"string","label":"green|yellow|red","reason":"string","next_steps":"string"}]}
 Rubric:
 - green: evidence clearly addresses all required parts in the slide prompt and rubric.
 - yellow: partial understanding or unclear/incomplete reasoning.
@@ -582,6 +582,7 @@ Rules:
 - If current slide evidence is partial, incomplete, or covers only one part, do not return green.
 - Never use names in reason.
 - Keep reason under 20 words.
+- next_steps should be a short, actionable fix for how to reach green (max 24 words).
 - Do not output markdown.`;
 
     const userPrompt = [
@@ -638,13 +639,18 @@ Rules:
     const ratingByStudent = new Map<string, Rating>();
     for (const item of ratings) {
       if (!item || typeof item !== "object") continue;
-      const row = item as { studentId?: unknown; label?: unknown; reason?: unknown };
+      const row = item as { studentId?: unknown; label?: unknown; reason?: unknown; next_steps?: unknown };
       const sid = String(row.studentId || "").trim();
       if (!sid) continue;
+      const reasonText = String(row.reason || "").trim();
+      const nextSteps = String(row.next_steps || "").trim();
+      const combinedReason = [reasonText, nextSteps ? `Next: ${nextSteps}` : ""]
+        .filter(Boolean)
+        .join(" ");
       ratingByStudent.set(sid, {
         studentId: sid,
         label: sanitizeLabel(row.label),
-        reason: trimText(String(row.reason || "").trim() || "Assessment generated.", 200),
+        reason: trimText(combinedReason || "Assessment generated.", 200),
       });
     }
 
