@@ -172,11 +172,17 @@ const extractPromptParts = (prompt: string, text: string): PromptPart[] => {
   return parts;
 };
 
-const evaluateCoverage = (evidenceText: string, parts: PromptPart[]) => {
+const evaluateCoverage = (
+  evidenceText: string,
+  parts: PromptPart[],
+  rubricTokens: string[]
+) => {
   if (!parts.length) {
     return { total: 0, addressed: 0, complete: true };
   }
   const evidence = normalizeForMatch(evidenceText);
+  const rubricSet = Array.from(new Set(rubricTokens.filter(Boolean)));
+  const rubricHits = rubricSet.filter((token) => evidence.includes(token)).length;
   let addressed = 0;
   for (const part of parts) {
     const numericTokens = part.tokens.filter((token) => /\d/.test(token));
@@ -190,7 +196,9 @@ const evaluateCoverage = (evidenceText: string, parts: PromptPart[]) => {
         return normalizedToken ? evidence.includes(normalizedToken) : false;
       });
     const lexicalHits = lexicalTokens.filter((token) => evidence.includes(token)).length;
-    if (numericHit || lexicalHits >= 2) addressed += 1;
+    const rubricSupport =
+      (lexicalHits >= 1 && rubricHits >= 1) || rubricHits >= 3;
+    if (numericHit || lexicalHits >= 2 || rubricSupport) addressed += 1;
   }
   return {
     total: parts.length,
@@ -334,6 +342,8 @@ export async function POST(req: Request) {
     return new NextResponse("Slide not found for session lesson", { status: 404 });
   }
   const promptParts = extractPromptParts(slide.prompt || "", slide.text || "");
+  const rubricText = parseRubric(slide.rubric || null);
+  const rubricTokens = rubricText === "None" ? [] : tokenizeForPart(rubricText);
 
   const [lessonSlides, responses, studentStates, sessionStates] = await Promise.all([
     prisma.lessonSlide.findMany({
@@ -492,7 +502,7 @@ export async function POST(req: Request) {
       const evidence = [typed ? `typed: ${typed}` : "", drawing ? `drawing text: ${drawing}` : ""]
         .filter(Boolean)
         .join(" | ");
-      const coverage = evaluateCoverage(evidence, promptParts);
+      const coverage = evaluateCoverage(evidence, promptParts, rubricTokens);
       if (!evidence) {
         autoGrey.push({
           studentId: context.userId,
