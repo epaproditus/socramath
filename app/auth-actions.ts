@@ -11,6 +11,10 @@ export async function signInWithCredentialsAction(formData: FormData) {
     });
 }
 
+export async function signInAction() {
+    await signIn("credentials", { redirectTo: "/login" });
+}
+
 export async function signOutAction() {
     await signOut();
 }
