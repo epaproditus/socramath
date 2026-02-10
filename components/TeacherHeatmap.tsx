@@ -19,7 +19,8 @@ type HeatmapPayload = {
   slides: { id: string; index: number }[];
   students: { id: string; name: string; email?: string | null }[];
   states?: { userId: string; currentSlideIndex: number }[];
-  responses: { key: string; response: string; drawingPath: string; updatedAt: string }[];
+  responses: { key: string; response: string; drawingPath: string; drawingText?: string; updatedAt: string }[];
+  assessments?: { key: string; label: "green" | "yellow" | "red" | "grey"; reason?: string; updatedAt?: string }[];
 };
 
 type SortMode = "first" | "last" | "recent";
@@ -60,6 +61,8 @@ export default function TeacherHeatmap() {
   const [studentSummary, setStudentSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState<"slide" | "student" | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [assessmentLoading, setAssessmentLoading] = useState<"slide" | "cell" | "student" | null>(null);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const paceInitRef = useRef(false);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
@@ -71,8 +74,12 @@ export default function TeacherHeatmap() {
       const json = await res.json();
       setData(json);
       setLastUpdatedAt(new Date());
-    } catch (err: any) {
-      setError(err?.message || "Failed to load heatmap");
+    } catch (err: unknown) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "Failed to load heatmap";
+      setError(message || "Failed to load heatmap");
     }
   }, []);
 
@@ -163,10 +170,44 @@ export default function TeacherHeatmap() {
       } else {
         setStudentSummary(json.summary || "");
       }
-    } catch (err: any) {
-      setSummaryError(err?.message || "Failed to summarize");
+    } catch (err: unknown) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "Failed to summarize";
+      setSummaryError(message || "Failed to summarize");
     } finally {
       setSummaryLoading(null);
+    }
+  };
+
+  const runAssessment = async (payload: { slideId: string; studentId?: string; mode: "slide" | "cell" | "student" }) => {
+    if (!data?.session.id) return;
+    setAssessmentError(null);
+    setAssessmentLoading(payload.mode);
+    try {
+      const res = await fetch("/api/lesson-assessment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: data.session.id,
+          slideId: payload.slideId,
+          studentId: payload.studentId,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to assess");
+      }
+      await load();
+    } catch (err: unknown) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "Failed to assess";
+      setAssessmentError(message);
+    } finally {
+      setAssessmentLoading(null);
     }
   };
 
@@ -212,6 +253,14 @@ export default function TeacherHeatmap() {
     data?.responses.forEach((r) => map.set(r.key, r));
     return map;
   }, [data?.responses]);
+
+  const assessmentMap = useMemo(() => {
+    const map = new Map<string, { label: "green" | "yellow" | "red" | "grey"; reason?: string }>();
+    data?.assessments?.forEach((assessment) => {
+      map.set(assessment.key, { label: assessment.label, reason: assessment.reason || "" });
+    });
+    return map;
+  }, [data?.assessments]);
 
   const studentSlideMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -367,6 +416,21 @@ export default function TeacherHeatmap() {
       {data.session.timerRunning || data.session.timerRemainingSec ? (
         <div className="text-xs text-zinc-500">Timer: {formatTime(remainingSeconds)}</div>
       ) : null}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-zinc-300" /> Not assessed
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-emerald-300" /> Green
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-amber-300" /> Yellow
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-rose-300" /> Red
+        </span>
+      </div>
+      {assessmentError ? <div className="text-xs text-red-500">{assessmentError}</div> : null}
 
       <div className="rounded-xl border border-zinc-200 bg-white p-3 overflow-auto">
         <div className="grid" style={{ gridTemplateColumns: `220px repeat(${slides.length}, 84px)` }}>
@@ -404,24 +468,35 @@ export default function TeacherHeatmap() {
               </button>
               {slides.map((slide) => {
                 const cell = responsesMap.get(`${student.id}:${slide.id}`);
+                const assessment = assessmentMap.get(`${student.id}:${slide.id}`);
                 const hasResponse = !!cell?.response || !!cell?.drawingPath;
                 const studentSlideIndex =
                   data?.session.mode === "student"
                     ? studentSlideMap.get(student.id)
                     : data?.session.currentSlideIndex;
                 const isActiveSlide = studentSlideIndex === slide.index;
-                const color = flatMode
-                  ? hasResponse
-                    ? "bg-blue-100"
-                    : "bg-zinc-100"
-                  : hasResponse
-                  ? "bg-emerald-200"
-                  : "bg-zinc-100";
+                const color = (() => {
+                  if (flatMode) {
+                    return hasResponse ? "bg-blue-100" : "bg-zinc-100";
+                  }
+                  if (!assessment) return "bg-zinc-100";
+                  if (assessment.label === "green") return "bg-emerald-300";
+                  if (assessment.label === "yellow") return "bg-amber-300";
+                  if (assessment.label === "red") return "bg-rose-300";
+                  return "bg-zinc-100";
+                })();
+                const tooltip = [
+                  cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response",
+                  assessment ? `Assessment: ${assessment.label}` : "Assessment: not assessed",
+                  assessment?.reason ? `Reason: ${assessment.reason}` : "",
+                ]
+                  .filter(Boolean)
+                  .join("\n");
                 return (
                   <div
                     key={`${student.id}-${slide.id}`}
                     className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer ${isActiveSlide ? "ring-2 ring-sky-500 ring-inset" : ""}`}
-                    title={cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response"}
+                    title={tooltip}
                     onClick={() => {
                       setSelectedSlide(null);
                       setSelectedStudent(null);
@@ -452,6 +527,19 @@ export default function TeacherHeatmap() {
                 <span className="font-semibold text-zinc-700">{selectedCell.studentName}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() =>
+                    runAssessment({
+                      slideId: selectedCell.slideId,
+                      studentId: selectedCell.studentId,
+                      mode: "cell",
+                    })
+                  }
+                  disabled={assessmentLoading === "cell"}
+                >
+                  {assessmentLoading === "cell" ? "Assessing..." : "Assess"}
+                </button>
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
@@ -556,6 +644,18 @@ export default function TeacherHeatmap() {
               <div className="flex items-center gap-2">
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() =>
+                    runAssessment({
+                      slideId: selectedSlide.slideId,
+                      mode: "slide",
+                    })
+                  }
+                  disabled={assessmentLoading === "slide"}
+                >
+                  {assessmentLoading === "slide" ? "Assessing..." : "Assess Colors"}
+                </button>
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => fetchSummary({ slideId: selectedSlide.slideId })}
                   disabled={summaryLoading === "slide"}
                 >
@@ -658,6 +758,21 @@ export default function TeacherHeatmap() {
                 <span className="font-semibold text-zinc-700">{selectedStudent.studentName}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => {
+                    const selected = slides.find((slide) => slide.index === studentSlideIndex);
+                    if (!selected) return;
+                    runAssessment({
+                      slideId: selected.id,
+                      studentId: selectedStudent.studentId,
+                      mode: "student",
+                    });
+                  }}
+                  disabled={assessmentLoading === "student"}
+                >
+                  {assessmentLoading === "student" ? "Assessing..." : "Assess This Slide"}
+                </button>
                 <button
                   className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                   onClick={() => fetchSummary({ studentId: selectedStudent.studentId })}

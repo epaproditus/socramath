@@ -7,6 +7,39 @@ const isMissingTableError = (err: unknown) =>
   "code" in err &&
   (err as { code?: string }).code === "P2021";
 
+const ensureAssessmentTable = async () => {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "LessonCellAssessment" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "sessionId" TEXT NOT NULL,
+      "slideId" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "label" TEXT NOT NULL,
+      "reason" TEXT,
+      "source" TEXT NOT NULL DEFAULT 'llm',
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "LessonCellAssessment_sessionId_slideId_userId_key"
+    ON "LessonCellAssessment"("sessionId","slideId","userId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "LessonCellAssessment_sessionId_idx"
+    ON "LessonCellAssessment"("sessionId")
+  `);
+};
+
+type AssessmentRow = {
+  sessionId: string;
+  slideId: string;
+  userId: string;
+  label: string;
+  reason: string | null;
+  updatedAt: string | number | Date;
+};
+
 export async function GET() {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -39,7 +72,8 @@ export async function GET() {
     select: { id: true, index: true },
   });
 
-  const [responses, states, studentSlideStates] = await Promise.all([
+  await ensureAssessmentTable();
+  const [responses, states, studentSlideStates, assessments] = await Promise.all([
     prisma.lessonResponse.findMany({
       where: { sessionId: lessonSession.id },
       include: { user: true },
@@ -59,6 +93,12 @@ export async function GET() {
         if (isMissingTableError(err)) return [];
         throw err;
       }),
+    prisma.$queryRawUnsafe<AssessmentRow[]>(
+      `SELECT "sessionId","slideId","userId","label","reason","updatedAt"
+       FROM "LessonCellAssessment"
+       WHERE "sessionId" = ?`,
+      lessonSession.id
+    ),
   ]);
 
   const studentsMap = new Map<string, { id: string; name: string; email?: string | null }>();
@@ -144,6 +184,12 @@ export async function GET() {
     responses: Array.from(cellMap.entries()).map(([key, value]) => ({
       key,
       ...value,
+    })),
+    assessments: assessments.map((assessment) => ({
+      key: `${assessment.userId}:${assessment.slideId}`,
+      label: assessment.label,
+      reason: assessment.reason || "",
+      updatedAt: String(assessment.updatedAt || ""),
     })),
   });
 }
