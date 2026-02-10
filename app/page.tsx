@@ -157,6 +157,22 @@ export default function Home() {
     }
   }, [activeExperience, setSidebarOpen]);
 
+  useEffect(() => {
+    if (activeExperience !== "lesson") return;
+    if (!lessonState?.session?.id || lessonState.session.mode !== "student") return;
+    const interval = setInterval(() => {
+      fetch("/api/lesson-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: lessonState.session.id,
+          currentSlideIndex: lessonState.currentSlideIndex,
+        }),
+      }).catch(() => {});
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [activeExperience, lessonState?.session?.id, lessonState?.session?.mode, lessonState?.currentSlideIndex]);
+
   const loadLessonState = async (preferLesson = false) => {
     setLessonLoading(true);
     try {

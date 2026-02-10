@@ -101,13 +101,17 @@ export async function GET() {
     ),
   ]);
 
-  const studentsMap = new Map<string, { id: string; name: string; email?: string | null }>();
+  const studentsMap = new Map<
+    string,
+    { id: string; name: string; email?: string | null; classPeriod?: string | null }
+  >();
   for (const response of responses) {
     const name = response.user?.name || response.user?.email || "Student";
     studentsMap.set(response.userId, {
       id: response.userId,
       name,
       email: response.user?.email,
+      classPeriod: response.user?.classPeriod || null,
     });
   }
   for (const state of states) {
@@ -116,6 +120,7 @@ export async function GET() {
       id: state.userId,
       name,
       email: state.user?.email,
+      classPeriod: state.user?.classPeriod || null,
     });
   }
   for (const studentState of studentSlideStates) {
@@ -124,6 +129,7 @@ export async function GET() {
       id: studentState.userId,
       name,
       email: studentState.user?.email,
+      classPeriod: studentState.user?.classPeriod || null,
     });
   }
 
@@ -180,6 +186,7 @@ export async function GET() {
     states: states.map((state) => ({
       userId: state.userId,
       currentSlideIndex: state.currentSlideIndex,
+      updatedAt: state.updatedAt.toISOString(),
     })),
     responses: Array.from(cellMap.entries()).map(([key, value]) => ({
       key,

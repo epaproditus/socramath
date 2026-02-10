@@ -151,6 +151,22 @@ export default function LessonStudentView() {
   }, [state?.session?.timerRunning, state?.session?.timerEndsAt]);
 
   useEffect(() => {
+    if (!state?.session?.id) return;
+    if (state.session.mode !== "student") return;
+    const interval = setInterval(() => {
+      fetch("/api/lesson-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: state.session.id,
+          currentSlideIndex,
+        }),
+      }).catch(() => {});
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [state?.session?.id, state?.session?.mode, currentSlideIndex]);
+
+  useEffect(() => {
     const isFrozen = !!state?.session?.isFrozen;
     if (!prevFrozenRef.current && isFrozen) {
       try {

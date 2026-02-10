@@ -17,8 +17,8 @@ type HeatmapPayload = {
     timerRunning?: boolean;
   };
   slides: { id: string; index: number }[];
-  students: { id: string; name: string; email?: string | null }[];
-  states?: { userId: string; currentSlideIndex: number }[];
+  students: { id: string; name: string; email?: string | null; classPeriod?: string | null }[];
+  states?: { userId: string; currentSlideIndex: number; updatedAt?: string }[];
   responses: { key: string; response: string; drawingPath: string; drawingText?: string; updatedAt: string }[];
   assessments?: { key: string; label: AssessmentLabel; reason?: string; updatedAt?: string }[];
 };
@@ -71,6 +71,7 @@ export default function TeacherHeatmap() {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState<"slide" | "cell" | "student" | null>(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
+  const [classFilter, setClassFilter] = useState<string>("all");
   const paceInitRef = useRef(false);
 
   const slides = useMemo(() => data?.slides || [], [data?.slides]);
@@ -347,6 +348,16 @@ export default function TeacherHeatmap() {
     return map;
   }, [data?.states]);
 
+  const studentConnectedMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    const now = Date.now();
+    data?.states?.forEach((state) => {
+      const updatedAt = state.updatedAt ? new Date(state.updatedAt).getTime() : 0;
+      map.set(state.userId, now - updatedAt < 20000);
+    });
+    return map;
+  }, [data?.states]);
+
   useEffect(() => {
     if (selectedCell) {
       setZoom(1);
@@ -398,8 +409,34 @@ export default function TeacherHeatmap() {
         return latestB - latestA;
       });
     }
-    return sorted;
-  }, [data?.students, sortMode, responsesMap, slides]);
+    const filtered =
+      classFilter === "all"
+        ? sorted
+        : sorted.filter((student) => (student.classPeriod || "Unassigned") === classFilter);
+    return filtered;
+  }, [data?.students, sortMode, responsesMap, slides, classFilter]);
+
+  const classOptions = useMemo(() => {
+    const options = new Set<string>();
+    (data?.students || []).forEach((student) => {
+      options.add(student.classPeriod || "Unassigned");
+    });
+    return Array.from(options).sort((a, b) => a.localeCompare(b));
+  }, [data?.students]);
+
+  const studentGroups = useMemo(() => {
+    const groups = new Map<string, typeof students>();
+    students.forEach((student) => {
+      const key = student.classPeriod || "Unassigned";
+      const list = groups.get(key) || [];
+      list.push(student);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries()).map(([label, groupStudents]) => ({
+      label,
+      students: groupStudents,
+    }));
+  }, [students]);
 
   const selectedCellAssessment = selectedCell
     ? assessmentMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)
@@ -519,6 +556,21 @@ export default function TeacherHeatmap() {
         <span className="inline-flex items-center gap-1">
           <span className="h-2.5 w-2.5 rounded-sm bg-rose-300" /> Red
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          <label className="text-[11px] text-zinc-500">Class</label>
+          <select
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] text-zinc-600"
+            value={classFilter}
+            onChange={(event) => setClassFilter(event.target.value)}
+          >
+            <option value="all">All classes</option>
+            {classOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       {assessmentError ? <div className="text-xs text-red-500">{assessmentError}</div> : null}
 
@@ -538,68 +590,80 @@ export default function TeacherHeatmap() {
               {slide.index}
             </button>
           ))}
-          {students.map((student) => (
-            <div key={student.id} className="contents">
-              <button
-                className="sticky left-0 z-10 flex items-center border-t border-zinc-100 bg-white px-2 py-2 text-xs text-zinc-600 hover:text-zinc-900"
-                onClick={() => {
-                  const current = studentSlideMap.get(student.id) ?? data?.session.currentSlideIndex ?? 1;
-                  setSelectedCell(null);
-                  setSelectedSlide(null);
-                  setSelectedStudent({
-                    studentId: student.id,
-                    studentName: student.name,
-                    slideIndex: current,
-                  });
-                  setStudentSlideIndex(current);
-                }}
+          {studentGroups.map((group) => (
+            <div key={`group-${group.label}`} className="contents">
+              <div
+                className="col-span-full border-t border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] font-semibold text-zinc-500"
+                style={{ gridColumn: "1 / -1" }}
               >
-                {hideNames ? `Student ${student.id.slice(0, 4)}` : student.name}
-              </button>
-              {slides.map((slide) => {
-                const cell = responsesMap.get(`${student.id}:${slide.id}`);
-                const assessment = assessmentMap.get(`${student.id}:${slide.id}`);
-                const hasResponse = !!cell?.response || !!cell?.drawingPath;
-                const studentSlideIndex =
-                  data?.session.mode === "student"
-                    ? studentSlideMap.get(student.id)
-                    : data?.session.currentSlideIndex;
-                const isActiveSlide = studentSlideIndex === slide.index;
-                const color = (() => {
-                  if (flatMode) {
-                    return hasResponse ? "bg-blue-100" : "bg-zinc-100";
-                  }
-                  if (!assessment) return "bg-zinc-100";
-                  if (assessment.label === "green") return "bg-emerald-300";
-                  if (assessment.label === "yellow") return "bg-amber-300";
-                  if (assessment.label === "red") return "bg-rose-300";
-                  return "bg-zinc-100";
-                })();
-                const tooltip = [
-                  cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response",
-                  assessment ? `Assessment: ${assessment.label}` : "Assessment: not assessed",
-                  assessment?.reason ? `Reason: ${assessment.reason}` : "",
-                ]
-                  .filter(Boolean)
-                  .join("\n");
-                return (
-                  <div
-                    key={`${student.id}-${slide.id}`}
-                    className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer ${isActiveSlide ? "ring-2 ring-sky-500 ring-inset" : ""}`}
-                    title={tooltip}
+                Class: {group.label}
+              </div>
+              {group.students.map((student) => (
+                <div key={student.id} className="contents">
+                  <button
+                    className="sticky left-0 z-10 flex items-center border-t border-zinc-100 bg-white px-2 py-2 text-xs text-zinc-600 hover:text-zinc-900"
                     onClick={() => {
+                      const current = studentSlideMap.get(student.id) ?? data?.session.currentSlideIndex ?? 1;
+                      setSelectedCell(null);
                       setSelectedSlide(null);
-                      setSelectedStudent(null);
-                      setSelectedCell({
+                      setSelectedStudent({
                         studentId: student.id,
                         studentName: student.name,
-                        slideId: slide.id,
-                        slideIndex: slide.index,
+                        slideIndex: current,
                       });
+                      setStudentSlideIndex(current);
                     }}
-                  />
-                );
-              })}
+                  >
+                    {hideNames ? `Student ${student.id.slice(0, 4)}` : student.name}
+                  </button>
+                  {slides.map((slide) => {
+                    const cell = responsesMap.get(`${student.id}:${slide.id}`);
+                    const assessment = assessmentMap.get(`${student.id}:${slide.id}`);
+                    const hasResponse = !!cell?.response || !!cell?.drawingPath;
+                    const studentSlideIndex =
+                      data?.session.mode === "student"
+                        ? studentSlideMap.get(student.id)
+                        : data?.session.currentSlideIndex;
+                    const isActiveSlide = studentSlideIndex === slide.index;
+                    const isConnected = studentConnectedMap.get(student.id) ?? false;
+                    const showActive = isActiveSlide && isConnected;
+                    const color = (() => {
+                      if (flatMode) {
+                        return hasResponse ? "bg-blue-100" : "bg-zinc-100";
+                      }
+                      if (!assessment) return "bg-zinc-100";
+                      if (assessment.label === "green") return "bg-emerald-300";
+                      if (assessment.label === "yellow") return "bg-amber-300";
+                      if (assessment.label === "red") return "bg-rose-300";
+                      return "bg-zinc-100";
+                    })();
+                    const tooltip = [
+                      cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response",
+                      assessment ? `Assessment: ${assessment.label}` : "Assessment: not assessed",
+                      assessment?.reason ? `Reason: ${assessment.reason}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n");
+                    return (
+                      <div
+                        key={`${student.id}-${slide.id}`}
+                        className={`border-t border-l border-zinc-100 h-10 ${color} cursor-pointer ${showActive ? "ring-2 ring-sky-500 ring-inset" : ""}`}
+                        title={tooltip}
+                        onClick={() => {
+                          setSelectedSlide(null);
+                          setSelectedStudent(null);
+                          setSelectedCell({
+                            studentId: student.id,
+                            studentName: student.name,
+                            slideId: slide.id,
+                            slideIndex: slide.index,
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           ))}
         </div>
