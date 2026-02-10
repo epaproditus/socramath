@@ -397,30 +397,6 @@ export default function TeacherHeatmap() {
     }
   }, [selectedStudent?.studentId]);
 
-  useEffect(() => {
-    if (!selectedCell) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        jumpStudentBy(-1);
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        jumpStudentBy(1);
-      }
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        jumpSlideBy(-1);
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        jumpSlideBy(1);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedCell, jumpStudentBy, jumpSlideBy]);
-
   const students = useMemo(() => {
     if (!data?.students) return [];
     const sorted = [...data.students];
@@ -528,6 +504,30 @@ export default function TeacherHeatmap() {
     },
     [selectedCell, jumpToSlide]
   );
+
+  useEffect(() => {
+    if (!selectedCell) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        jumpStudentBy(-1);
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        jumpStudentBy(1);
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        jumpSlideBy(-1);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        jumpSlideBy(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCell, jumpStudentBy, jumpSlideBy]);
 
   const selectedCellAssessment = selectedCell
     ? assessmentMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`)
