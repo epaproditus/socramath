@@ -22,6 +22,11 @@ type Rating = {
   reason: string;
 };
 type AssessmentSource = "teacher" | "student";
+type PromptPart = {
+  id: string;
+  raw: string;
+  tokens: string[];
+};
 
 const trimText = (value: string, max = 280) => value.replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -92,6 +97,106 @@ const parseResponseConfigSummary = (raw: string | null) => {
   } catch {
     return trimText(raw, 500);
   }
+};
+
+const stopwords = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "that",
+  "this",
+  "then",
+  "when",
+  "where",
+  "which",
+  "what",
+  "your",
+  "their",
+  "have",
+  "into",
+  "after",
+  "before",
+  "about",
+  "loan",
+  "rate",
+  "time",
+  "years",
+  "year",
+  "find",
+  "calculate",
+  "determine",
+  "answer",
+  "problem",
+  "slide",
+  "show",
+  "work",
+  "made",
+  "made",
+]);
+
+const normalizeForMatch = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9.%$\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const tokenizeForPart = (value: string) =>
+  normalizeForMatch(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => {
+      if (!token) return false;
+      if (/\d/.test(token)) return token.length >= 2;
+      if (token.length < 4) return false;
+      return !stopwords.has(token);
+    })
+    .slice(0, 24);
+
+const extractPromptParts = (prompt: string, text: string): PromptPart[] => {
+  const source = [prompt, text].filter(Boolean).join("\n");
+  if (!source.trim()) return [];
+  const normalized = source.replace(/\r/g, " ").replace(/\n/g, " ");
+  const parts: PromptPart[] = [];
+  const re = /(^|\s)(\d{1,2})\.\s+(.+?)(?=(?:\s\d{1,2}\.\s+)|$)/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = re.exec(normalized)) !== null) {
+    const id = String(match[2] || "").trim();
+    const raw = String(match[3] || "").trim();
+    if (!id || !raw) continue;
+    const tokens = tokenizeForPart(raw);
+    parts.push({ id, raw, tokens });
+  }
+  return parts;
+};
+
+const evaluateCoverage = (evidenceText: string, parts: PromptPart[]) => {
+  if (!parts.length) {
+    return { total: 0, addressed: 0, complete: true };
+  }
+  const evidence = normalizeForMatch(evidenceText);
+  let addressed = 0;
+  for (const part of parts) {
+    const numericTokens = part.tokens.filter((token) => /\d/.test(token));
+    const lexicalTokens = Array.from(
+      new Set(part.tokens.filter((token) => !/\d/.test(token)))
+    );
+    const numericHit =
+      numericTokens.length > 0 &&
+      numericTokens.some((token) => {
+        const normalizedToken = token.replace(/[^\d.%]/g, "");
+        return normalizedToken ? evidence.includes(normalizedToken) : false;
+      });
+    const lexicalHits = lexicalTokens.filter((token) => evidence.includes(token)).length;
+    if (numericHit || lexicalHits >= 2) addressed += 1;
+  }
+  return {
+    total: parts.length,
+    addressed,
+    complete: addressed >= parts.length,
+  };
 };
 
 const parseJsonObject = (raw: string) => {
@@ -228,6 +333,7 @@ export async function POST(req: Request) {
   if (!slide || slide.lessonId !== lessonSession.lessonId) {
     return new NextResponse("Slide not found for session lesson", { status: 404 });
   }
+  const promptParts = extractPromptParts(slide.prompt || "", slide.text || "");
 
   const [lessonSlides, responses, studentStates, sessionStates] = await Promise.all([
     prisma.lessonSlide.findMany({
@@ -386,6 +492,7 @@ export async function POST(req: Request) {
       const evidence = [typed ? `typed: ${typed}` : "", drawing ? `drawing text: ${drawing}` : ""]
         .filter(Boolean)
         .join(" | ");
+      const coverage = evaluateCoverage(evidence, promptParts);
       if (!evidence) {
         autoGrey.push({
           studentId: context.userId,
@@ -399,6 +506,7 @@ export async function POST(req: Request) {
         evidence,
         otherTypedSummary: context.otherTypedSummary,
         otherDrawingSummary: context.otherDrawingSummary,
+        coverage,
       };
     })
     .filter((entry) => !!entry.evidence);
@@ -436,12 +544,18 @@ Rules:
       `Rubric: ${parseRubric(slide.rubric || null)}`,
       `Response type: ${slide.responseType || "text"}`,
       `Response config: ${responseConfigSummary}`,
+      `Detected prompt parts: ${
+        promptParts.length
+          ? promptParts.map((part) => `${part.id}. ${trimText(part.raw, 120)}`).join(" || ")
+          : "none"
+      }`,
       "Evidence by student:",
       ...evaluable.map(
         (entry) =>
           [
             `- ${entry.studentId}:`,
             `  current slide evidence: ${trimText(entry.evidence, 500)}`,
+            `  coverage estimate: addressed ${entry.coverage.addressed} of ${entry.coverage.total} prompt parts`,
             `  other slide typed responses: ${trimText(entry.otherTypedSummary, 450)}`,
             `  other slide drawing text: ${trimText(entry.otherDrawingSummary, 450)}`,
           ].join("\n")
@@ -488,12 +602,23 @@ Rules:
 
     llmRatings = evaluable.map((entry) => {
       const found = ratingByStudent.get(entry.studentId);
-      if (found) return found;
-      return {
+      const candidate = found || {
         studentId: entry.studentId,
         label: "yellow",
         reason: "Partial evidence; needs clearer reasoning.",
       };
+      if (
+        candidate.label === "green" &&
+        entry.coverage.total >= 2 &&
+        entry.coverage.addressed < entry.coverage.total
+      ) {
+        return {
+          ...candidate,
+          label: "yellow" as AssessmentLabel,
+          reason: `Partial coverage: ${entry.coverage.addressed}/${entry.coverage.total} parts addressed.`,
+        };
+      }
+      return candidate;
     });
   }
 
