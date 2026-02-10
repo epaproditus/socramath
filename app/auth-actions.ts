@@ -1,5 +1,6 @@
 "use server"
 import { signIn, signOut, auth } from "@/auth"
+import { redirect } from "next/navigation";
 
 export async function signInWithCredentialsAction(formData: FormData) {
     const email = String(formData.get("email") || "");
@@ -12,7 +13,7 @@ export async function signInWithCredentialsAction(formData: FormData) {
 }
 
 export async function signInAction() {
-    await signIn("credentials", { redirectTo: "/login" });
+    redirect("/login");
 }
 
 export async function signOutAction() {
