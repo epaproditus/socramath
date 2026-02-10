@@ -17,33 +17,34 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
-  
+
   // App Relations
-  role          String?   @default("student")
-  localId       String?   @unique
-  classPeriod   String?
-  testSessions  TestSession[]
-  lessons       Lesson[]
+  role                String?                   @default("student")
+  localId             String?                   @unique
+  classPeriod         String?
+  testSessions        TestSession[]
+  lessons             Lesson[]
   lessonSessionStates LessonSessionState[]
-  lessonResponses LessonResponse[]
-  studentResponses StudentResponse[]
-  sessionLocks  StudentSessionLock[]
-  sessionStates StudentSessionState[]
+  lessonResponses     LessonResponse[]
+  lessonSlideStates   LessonStudentSlideState[]
+  studentResponses    StudentResponse[]
+  sessionLocks        StudentSessionLock[]
+  sessionStates       StudentSessionState[]
 }
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String? 
-  access_token       String? 
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String? 
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -69,33 +70,33 @@ model VerificationToken {
 // App Models
 
 model TestSession {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String   @default("New Session")
-  isActive  Boolean  @default(false)
+  id                String   @id @default(cuid())
+  userId            String
+  title             String   @default("New Session")
+  isActive          Boolean  @default(false)
   lockQuestionIndex Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questions Question[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions        Question[]
   studentResponses StudentResponse[]
-  studentLocks StudentSessionLock[]
-  studentStates StudentSessionState[]
+  studentLocks     StudentSessionLock[]
+  studentStates    StudentSessionState[]
 }
 
 model Question {
-  id                String      @id @default(cuid())
-  sessionId         String
-  text              String
-  imageUrl          String?
-  studentResponse   String
-  rubric            String      // Store as JSON string since SQLite doesn't support arrays
-  vocabulary        String?     // Store as JSON string
-  orderIndex        Int         @default(0)
-  createdAt         DateTime    @default(now())
+  id              String   @id @default(cuid())
+  sessionId       String
+  text            String
+  imageUrl        String?
+  studentResponse String
+  rubric          String // Store as JSON string since SQLite doesn't support arrays
+  vocabulary      String? // Store as JSON string
+  orderIndex      Int      @default(0)
+  createdAt       DateTime @default(now())
 
-  session TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session          TestSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   studentResponses StudentResponse[]
 }
 
@@ -121,12 +122,12 @@ model StudentResponse {
 }
 
 model StudentSessionLock {
-  id        String   @id @default(cuid())
-  sessionId String
-  userId    String
+  id               String   @id @default(cuid())
+  sessionId        String
+  userId           String
   maxQuestionIndex Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   session TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -135,12 +136,12 @@ model StudentSessionLock {
 }
 
 model StudentSessionState {
-  id        String   @id @default(cuid())
-  sessionId String
-  userId    String
-  currentQuestionIndex Int @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  sessionId            String
+  userId               String
+  currentQuestionIndex Int      @default(1)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   session TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -149,13 +150,13 @@ model StudentSessionState {
 }
 
 model AppConfig {
-  id        String   @id @default(cuid())
-  baseUrl   String?
-  apiKey    String?
-  model     String?
+  id           String   @id @default(cuid())
+  baseUrl      String?
+  apiKey       String?
+  model        String?
   systemPrompt String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Lesson {
@@ -170,45 +171,47 @@ model Lesson {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  slides LessonSlide[]
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slides   LessonSlide[]
   sessions LessonSession[]
 }
 
 model LessonSlide {
-  id        String   @id @default(cuid())
-  lessonId  String
-  index     Int
-  text      String?
-  prompt    String?
-  rubric    String? // JSON array of strings
-  responseType String? // "text" | "drawing" | "both"
+  id             String   @id @default(cuid())
+  lessonId       String
+  index          Int
+  text           String?
+  prompt         String?
+  rubric         String? // JSON array of strings
+  responseType   String? // "text" | "drawing" | "both"
   responseConfig String? // JSON config for widgets
-  createdAt DateTime @default(now())
+  createdAt      DateTime @default(now())
 
-  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  responses LessonResponse[]
+  lesson        Lesson                    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  responses     LessonResponse[]
+  studentStates LessonStudentSlideState[]
 
   @@unique([lessonId, index])
 }
 
 model LessonSession {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   lessonId          String
-  mode              String   @default("instructor") // instructor | student
-  currentSlideIndex Int      @default(1)
-  isActive          Boolean  @default(true)
-  isFrozen          Boolean  @default(false)
+  mode              String    @default("instructor") // instructor | student
+  currentSlideIndex Int       @default(1)
+  isActive          Boolean   @default(true)
+  isFrozen          Boolean   @default(false)
   paceConfig        String?
   timerEndsAt       DateTime?
   timerRemainingSec Int?
-  timerRunning      Boolean  @default(false)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  timerRunning      Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  states LessonSessionState[]
-  responses LessonResponse[]
+  lesson             Lesson                    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  states             LessonSessionState[]
+  responses          LessonResponse[]
+  studentSlideStates LessonStudentSlideState[]
 }
 
 model LessonSessionState {
@@ -220,25 +223,44 @@ model LessonSessionState {
   updatedAt         DateTime @updatedAt
 
   session LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, userId])
 }
 
 model LessonResponse {
-  id        String   @id @default(cuid())
-  sessionId String
-  slideId   String
-  userId    String
-  response  String
+  id           String   @id @default(cuid())
+  sessionId    String
+  slideId      String
+  userId       String
+  response     String
   responseType String? // "text" | "drawing" | "both"
-  drawingPath String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  drawingPath  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   session LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  slide LessonSlide @relation(fields: [slideId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slide   LessonSlide   @relation(fields: [slideId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, slideId, userId])
+}
+
+model LessonStudentSlideState {
+  id              String   @id @default(cuid())
+  sessionId       String
+  slideId         String
+  userId          String
+  responseText    String   @default("")
+  drawingPath     String?
+  drawingText     String?
+  drawingSnapshot String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  session LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  slide   LessonSlide   @relation(fields: [slideId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, slideId, userId])
 }
