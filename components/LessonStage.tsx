@@ -23,12 +23,14 @@ type LessonStageProps = {
     elements?: unknown[];
     files?: Record<string, unknown>;
     appState?: Record<string, unknown>;
+    meta?: { width: number; height: number };
   };
   onSceneChange?: (sceneData: {
     elements: unknown[];
     files: Record<string, unknown>;
     appState: Record<string, unknown>;
     snapshot: unknown;
+    meta?: { width: number; height: number };
   }) => void;
 };
 

@@ -914,9 +914,21 @@ export default function TeacherHeatmap() {
                         )}`
                       : "";
                     let snapshot: Record<string, unknown> | undefined;
+                    let snapshotMeta: { width: number; height: number } | undefined;
                     if (cell?.drawingSnapshot && typeof cell.drawingSnapshot === "string") {
                       try {
-                        snapshot = JSON.parse(cell.drawingSnapshot) as Record<string, unknown>;
+                        const parsed = JSON.parse(cell.drawingSnapshot) as Record<string, unknown>;
+                        if (parsed && typeof parsed === "object" && "snapshot" in parsed) {
+                          const inner = parsed as { snapshot?: unknown; meta?: { width: number; height: number } };
+                          if (inner.snapshot && typeof inner.snapshot === "object") {
+                            snapshot = inner.snapshot as Record<string, unknown>;
+                          }
+                          if (inner.meta && typeof inner.meta.width === "number" && typeof inner.meta.height === "number") {
+                            snapshotMeta = inner.meta;
+                          }
+                        } else {
+                          snapshot = parsed;
+                        }
                       } catch {
                         snapshot = undefined;
                       }
@@ -930,7 +942,14 @@ export default function TeacherHeatmap() {
                             transformOrigin: "top left",
                           }}
                         >
-                          <div className="h-full w-full">
+                          <div
+                            className="h-full w-full"
+                            style={
+                              snapshotMeta
+                                ? { width: snapshotMeta.width, height: snapshotMeta.height }
+                                : undefined
+                            }
+                          >
                             <LessonExcalidrawOverlay
                               imageUrl={slideImageUrl}
                               readOnly
@@ -1247,9 +1266,21 @@ export default function TeacherHeatmap() {
                         )}`
                       : "";
                     let snapshot: Record<string, unknown> | undefined;
+                    let snapshotMeta: { width: number; height: number } | undefined;
                     if (cell?.drawingSnapshot && typeof cell.drawingSnapshot === "string") {
                       try {
-                        snapshot = JSON.parse(cell.drawingSnapshot) as Record<string, unknown>;
+                        const parsed = JSON.parse(cell.drawingSnapshot) as Record<string, unknown>;
+                        if (parsed && typeof parsed === "object" && "snapshot" in parsed) {
+                          const inner = parsed as { snapshot?: unknown; meta?: { width: number; height: number } };
+                          if (inner.snapshot && typeof inner.snapshot === "object") {
+                            snapshot = inner.snapshot as Record<string, unknown>;
+                          }
+                          if (inner.meta && typeof inner.meta.width === "number" && typeof inner.meta.height === "number") {
+                            snapshotMeta = inner.meta;
+                          }
+                        } else {
+                          snapshot = parsed;
+                        }
                       } catch {
                         snapshot = undefined;
                       }
@@ -1263,7 +1294,14 @@ export default function TeacherHeatmap() {
                             transformOrigin: "top left",
                           }}
                         >
-                          <div className="h-full w-full">
+                          <div
+                            className="h-full w-full"
+                            style={
+                              snapshotMeta
+                                ? { width: snapshotMeta.width, height: snapshotMeta.height }
+                                : undefined
+                            }
+                          >
                             <LessonExcalidrawOverlay
                               imageUrl={slideImageUrl}
                               readOnly

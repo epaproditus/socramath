@@ -17,12 +17,14 @@ type LessonExcalidrawOverlayProps = {
     files?: Record<string, unknown>;
     appState?: Record<string, unknown>;
     snapshot?: Partial<TLEditorSnapshot>;
+    meta?: { width: number; height: number };
   };
   onSceneChange?: (sceneData: {
     elements: unknown[];
     files: Record<string, unknown>;
     appState: Record<string, unknown>;
     snapshot: Partial<TLEditorSnapshot>;
+    meta?: { width: number; height: number };
   }) => void;
 };
 
@@ -261,11 +263,16 @@ const LessonExcalidrawOverlay = forwardRef(function LessonExcalidrawOverlay(
   const emitScene = () => {
     if (!editorRef.current || !onSceneChangeRef.current) return;
     const snapshot = editorRef.current.getSnapshot();
+    const img = imageRef.current;
+    const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+    const width = Math.max(1, Math.round(img?.naturalWidth || img?.width || wrapperRect?.width || 1280));
+    const height = Math.max(1, Math.round(img?.naturalHeight || img?.height || wrapperRect?.height || 720));
     const payload = {
       elements: [],
       files: {},
       appState: {},
       snapshot,
+      meta: { width, height },
     };
     const signature = JSON.stringify(payload);
     if (signature === lastSceneSignatureRef.current) return;

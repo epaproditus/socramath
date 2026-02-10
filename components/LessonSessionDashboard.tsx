@@ -220,6 +220,7 @@ export default function LessonSessionDashboard() {
     files: Record<string, unknown>;
     appState: Record<string, unknown>;
     snapshot?: Record<string, unknown>;
+    meta?: { width: number; height: number };
   }) => {
     if (!slideDetail?.id) return;
     const targetSlideId = slideDetail.id;

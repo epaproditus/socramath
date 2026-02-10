@@ -46,7 +46,10 @@ type LessonState = {
     responseText?: string;
     drawingPath?: string;
     drawingText?: string;
-    drawingSnapshot?: Record<string, unknown> | null;
+    drawingSnapshot?:
+      | Record<string, unknown>
+      | { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } }
+      | null;
     updatedAt?: string;
   } | null;
   slides: { id: string; index: number }[];
@@ -88,7 +91,7 @@ export default function Home() {
   const [lessonResponseTextBySlide, setLessonResponseTextBySlide] = useState<Record<string, string>>({});
   const [lessonDrawingPathBySlide, setLessonDrawingPathBySlide] = useState<Record<string, string>>({});
   const [lessonDrawingSceneBySlide, setLessonDrawingSceneBySlide] = useState<
-    Record<string, { snapshot?: Record<string, unknown> }>
+    Record<string, { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } }>
   >({});
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [formulaSheetUrl, setFormulaSheetUrl] = useState<string | null>(null);
@@ -122,7 +125,9 @@ export default function Home() {
   useEffect(() => {
     lessonDrawingPathRef.current = lessonDrawingPathBySlide;
   }, [lessonDrawingPathBySlide]);
-  const lessonDrawingSceneRef = useRef<Record<string, { snapshot?: Record<string, unknown> }>>({});
+  const lessonDrawingSceneRef = useRef<
+    Record<string, { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } }>
+  >({});
   useEffect(() => {
     lessonDrawingSceneRef.current = lessonDrawingSceneBySlide;
   }, [lessonDrawingSceneBySlide]);
@@ -205,12 +210,20 @@ export default function Home() {
           });
         }
         if (slideWork.drawingSnapshot && typeof slideWork.drawingSnapshot === "object") {
-          const signature = JSON.stringify(slideWork.drawingSnapshot);
+          const parsed = slideWork.drawingSnapshot as Record<string, unknown>;
+          const snapshotPayload =
+            parsed && typeof parsed === "object" && "snapshot" in parsed
+              ? (parsed as { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } })
+              : { snapshot: parsed as Record<string, unknown> };
+          const signature = JSON.stringify(snapshotPayload);
           if (drawingSceneSignatureRef.current[slideId] !== signature) {
             drawingSceneSignatureRef.current[slideId] = signature;
             setLessonDrawingSceneBySlide((prev) => ({
               ...prev,
-              [slideId]: { snapshot: slideWork.drawingSnapshot || undefined },
+              [slideId]: {
+                snapshot: snapshotPayload.snapshot || undefined,
+                meta: snapshotPayload.meta,
+              },
             }));
           }
         } else {
@@ -266,12 +279,19 @@ export default function Home() {
         ? (json.drawingSnapshot as Record<string, unknown>)
         : null;
     if (drawingSnapshot) {
-      const signature = JSON.stringify(drawingSnapshot);
+      const snapshotPayload =
+        drawingSnapshot && typeof drawingSnapshot === "object" && "snapshot" in drawingSnapshot
+          ? (drawingSnapshot as { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } })
+          : { snapshot: drawingSnapshot as Record<string, unknown> };
+      const signature = JSON.stringify(snapshotPayload);
       if (drawingSceneSignatureRef.current[slideId] !== signature) {
         drawingSceneSignatureRef.current[slideId] = signature;
         setLessonDrawingSceneBySlide((prev) => ({
           ...prev,
-          [slideId]: { snapshot: drawingSnapshot },
+          [slideId]: {
+            snapshot: snapshotPayload.snapshot || undefined,
+            meta: snapshotPayload.meta,
+          },
         }));
       }
     } else {
@@ -322,7 +342,7 @@ export default function Home() {
     if (!current?.session.id || !current.currentSlideId) return;
     const slideId = current.currentSlideId;
     const drawingText = lessonDrawingTextRef.current[slideId] || "";
-    const drawingSnapshot = lessonDrawingSceneRef.current[slideId]?.snapshot;
+    const drawingSnapshot = lessonDrawingSceneRef.current[slideId];
     const res = await fetch("/api/lesson-drawing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -357,6 +377,7 @@ export default function Home() {
     files: Record<string, unknown>;
     appState: Record<string, unknown>;
     snapshot: unknown;
+    meta?: { width: number; height: number };
   }) => {
     const slideId = lessonStateRef.current?.currentSlideId;
     if (!slideId) return;
@@ -364,13 +385,21 @@ export default function Home() {
       sceneData?.snapshot && typeof sceneData.snapshot === "object"
         ? (sceneData.snapshot as Record<string, unknown>)
         : {};
-    const signature = JSON.stringify(snapshot);
+    const payload = {
+      snapshot,
+      meta:
+        sceneData?.meta && typeof sceneData.meta === "object"
+          ? sceneData.meta
+          : undefined,
+    };
+    const signature = JSON.stringify(payload);
     if (drawingSceneSignatureRef.current[slideId] === signature) return;
     drawingSceneSignatureRef.current[slideId] = signature;
     setLessonDrawingSceneBySlide((prev) => ({
       ...prev,
       [slideId]: {
-        snapshot,
+        snapshot: payload.snapshot,
+        meta: payload.meta,
       },
     }));
   };
