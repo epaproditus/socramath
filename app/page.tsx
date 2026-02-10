@@ -52,25 +52,11 @@ type LessonState = {
   slides: { id: string; index: number }[];
 };
 
-const assessmentBorderClass = (label?: AssessmentLabel | null) => {
-  if (label === "green") return "border-emerald-400";
-  if (label === "yellow") return "border-amber-400";
-  if (label === "red") return "border-rose-400";
-  return "border-zinc-200";
-};
-
-const assessmentBadgeClass = (label?: AssessmentLabel | null) => {
-  if (label === "green") return "bg-emerald-100 text-emerald-700 border-emerald-300";
-  if (label === "yellow") return "bg-amber-100 text-amber-700 border-amber-300";
-  if (label === "red") return "bg-rose-100 text-rose-700 border-rose-300";
-  return "bg-zinc-100 text-zinc-600 border-zinc-300";
-};
-
-const assessmentLabelText = (label?: AssessmentLabel | null) => {
-  if (label === "green") return "Green";
-  if (label === "yellow") return "Yellow";
-  if (label === "red") return "Red";
-  return "Not Assessed";
+const assessmentBoxClass = (label?: AssessmentLabel | null) => {
+  if (label === "green") return "border-emerald-300 bg-emerald-50 text-emerald-700";
+  if (label === "yellow") return "border-amber-300 bg-amber-50 text-amber-700";
+  if (label === "red") return "border-rose-300 bg-rose-50 text-rose-700";
+  return "border-zinc-200 bg-zinc-50 text-zinc-600";
 };
 
 export default function Home() {
@@ -104,9 +90,6 @@ export default function Home() {
   const [lessonDrawingSceneBySlide, setLessonDrawingSceneBySlide] = useState<
     Record<string, { snapshot?: Record<string, unknown> }>
   >({});
-  const [lessonResponseText, setLessonResponseText] = useState("");
-  const [lessonResponseSaving, setLessonResponseSaving] = useState(false);
-  const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [formulaSheetUrl, setFormulaSheetUrl] = useState<string | null>(null);
   const [formulaSheetError, setFormulaSheetError] = useState<string | null>(null);
@@ -188,7 +171,6 @@ export default function Home() {
       const slideWork = json?.slideWork as LessonState["slideWork"];
       if (slideId && slideWork) {
         if (typeof slideWork.responseText === "string") {
-          setLessonResponseText(slideWork.responseText);
           setLessonResponseTextBySlide((prev) => {
             if ((prev[slideId] || "") === slideWork.responseText) return prev;
             return { ...prev, [slideId]: slideWork.responseText || "" };
@@ -241,7 +223,6 @@ export default function Home() {
       `/api/lesson-response?sessionId=${encodeURIComponent(sessionId)}&slideId=${encodeURIComponent(slideId)}&me=1`
     );
     if (!res.ok) {
-      setLessonResponseText("");
       setLessonResponseTextBySlide((prev) => {
         if ((prev[slideId] || "") === "") return prev;
         return { ...prev, [slideId]: "" };
@@ -250,7 +231,6 @@ export default function Home() {
     }
     const json = await res.json();
     const responseText = json.response || "";
-    setLessonResponseText(responseText);
     setLessonResponseTextBySlide((prev) => {
       if ((prev[slideId] || "") === responseText) return prev;
       return { ...prev, [slideId]: responseText };
@@ -288,33 +268,6 @@ export default function Home() {
       });
     }
 
-  };
-
-  const saveLessonResponse = async (
-    sessionId: string,
-    slideId: string,
-    responseType: string,
-    responseText: string
-  ) => {
-    if (lessonStateRef.current?.session?.isFrozen) return;
-    const drawingText = lessonDrawingTextRef.current[slideId] || "";
-    const drawingPath = lessonDrawingPathRef.current[slideId] || "";
-    const drawingSnapshot = lessonDrawingSceneRef.current[slideId]?.snapshot;
-    setLessonResponseSaving(true);
-    await fetch("/api/lesson-response", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId,
-        slideId,
-        response: responseText,
-        responseType,
-        drawingText,
-        drawingPath: drawingPath || undefined,
-        drawingSnapshot,
-      }),
-    }).catch(() => {});
-    setLessonResponseSaving(false);
   };
 
   const handleLessonSlideChange = async (nextIndex: number) => {
@@ -406,16 +359,6 @@ export default function Home() {
     }));
   };
 
-  const handleLessonResponseTextChange = (next: string) => {
-    setLessonResponseText(next);
-    const slideId = lessonStateRef.current?.currentSlideId;
-    if (!slideId) return;
-    setLessonResponseTextBySlide((prev) => {
-      if ((prev[slideId] || "") === next) return prev;
-      return { ...prev, [slideId]: next };
-    });
-  };
-
   const assessCurrentSlide = async () => {
     if (!lessonState?.session?.id || !lessonState.currentSlideId) return;
     setAssessmentError(null);
@@ -469,27 +412,6 @@ export default function Home() {
     if (!lessonState?.session.id || !lessonState.currentSlideId) return;
     loadLessonResponse(lessonState.session.id, lessonState.currentSlideId);
   }, [lessonState?.session.id, lessonState?.currentSlideId]);
-
-  useEffect(() => {
-    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
-    const responseType = "text";
-    if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
-    lessonResponseTimerRef.current = setTimeout(() => {
-      saveLessonResponse(
-        lessonState.session.id,
-        lessonState.currentSlideId!,
-        responseType,
-        lessonResponseText || ""
-      );
-    }, 700);
-    return () => {
-      if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
-    };
-  }, [
-    lessonResponseText,
-    lessonState?.session.id,
-    lessonState?.currentSlideId,
-  ]);
 
   useEffect(() => {
     if (!lessonState || activeExperienceRef.current !== "lesson") return;
@@ -1328,32 +1250,20 @@ export default function Home() {
                           <div className="flex h-full flex-col gap-2">
                             {lessonState &&
                               (() => {
-                                const responseType = "text";
-                                const showText = true;
-                                const disabled = !!lessonState.session?.isFrozen;
                                 const assessmentLabel = lessonState.slideAssessment?.label || "grey";
                                 if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
                                 return (
                                   <>
                                     <div
-                                      className={`rounded-xl border-2 bg-white p-3 ${assessmentBorderClass(
-                                        assessmentLabel
-                                      )}`}
+                                      className={`rounded-xl border-2 p-3 ${assessmentBoxClass(assessmentLabel)}`}
                                     >
                                       <div className="flex items-center justify-between gap-2">
                                         <div className="min-w-0">
                                           <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                                            Understanding Signal
-                                          </div>
-                                          <div
-                                            className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${assessmentBadgeClass(
-                                              assessmentLabel
-                                            )}`}
-                                          >
-                                            {assessmentLabelText(assessmentLabel)}
+                                            Assessment
                                           </div>
                                           {lessonState.slideAssessment?.reason ? (
-                                            <div className="mt-1 line-clamp-2 text-[11px] text-zinc-500">
+                                            <div className="mt-1 line-clamp-2 text-[11px] text-zinc-600">
                                               {lessonState.slideAssessment.reason}
                                             </div>
                                           ) : null}
@@ -1371,37 +1281,6 @@ export default function Home() {
                                         <div className="mt-2 text-[11px] text-red-600">{assessmentError}</div>
                                       ) : null}
                                     </div>
-                                    {showText ? (
-                                      <div className="rounded-xl border border-zinc-200 bg-white p-3">
-                                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                          Response
-                                        </div>
-                                        <textarea
-                                          value={lessonResponseText}
-                                          onChange={(e) => handleLessonResponseTextChange(e.target.value)}
-                                          disabled={disabled}
-                                          className="h-28 w-full rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-zinc-400"
-                                          placeholder="Type your response for this slide..."
-                                        />
-                                        <div className="mt-2 flex items-center justify-end">
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              saveLessonResponse(
-                                                lessonState.session.id,
-                                                lessonState.currentSlideId!,
-                                                responseType,
-                                                lessonResponseText || ""
-                                              )
-                                            }
-                                            disabled={disabled || lessonResponseSaving}
-                                            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                                          >
-                                            {lessonResponseSaving ? "Saving..." : "Save"}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : null}
                                   </>
                                 );
                               })()}
