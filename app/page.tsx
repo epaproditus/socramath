@@ -9,7 +9,6 @@ import { useRef, useEffect, useMemo, useState } from "react";
 import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 import LessonStage from "@/components/LessonStage";
-import LessonChoiceWidget from "@/components/LessonChoiceWidget";
 import { getRealtimeSocket } from "@/lib/realtime-client";
 
 type AssessmentLabel = "green" | "yellow" | "red" | "grey";
@@ -95,7 +94,7 @@ export default function Home() {
   } = useAppStore();
   const sessionRef = useRef(currentSession);
   const [calcLarge, setCalcLarge] = useState(false);
-  const [lessonTab, setLessonTab] = useState<"chat" | "calculator">("chat");
+  const [lessonTab, setLessonTab] = useState<"chat" | "calculator" | "formula">("chat");
   const [activeExperience, setActiveExperience] = useState<"test" | "lesson">("lesson");
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
   const [lessonLoading, setLessonLoading] = useState(false);
@@ -108,9 +107,10 @@ export default function Home() {
   const [lessonResponseText, setLessonResponseText] = useState("");
   const [lessonResponseSaving, setLessonResponseSaving] = useState(false);
   const lessonResponseTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [lessonChoiceValue, setLessonChoiceValue] = useState("");
-  const [lessonChoiceExplain, setLessonChoiceExplain] = useState("");
   const [timerNow, setTimerNow] = useState(() => Date.now());
+  const [formulaSheetUrl, setFormulaSheetUrl] = useState<string | null>(null);
+  const [formulaSheetError, setFormulaSheetError] = useState<string | null>(null);
+  const [formulaSheetLoading, setFormulaSheetLoading] = useState(false);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const prevFrozenRef = useRef(false);
@@ -246,8 +246,6 @@ export default function Home() {
         if ((prev[slideId] || "") === "") return prev;
         return { ...prev, [slideId]: "" };
       });
-      setLessonChoiceValue("");
-      setLessonChoiceExplain("");
       return;
     }
     const json = await res.json();
@@ -290,36 +288,6 @@ export default function Home() {
       });
     }
 
-    const responseType = lessonStateRef.current?.slideResponseType || "text";
-    const widgets = lessonStateRef.current?.slideResponseConfig?.widgets || (
-      responseType === "both" ? ["text", "drawing"] : [responseType]
-    );
-    if (!widgets.includes("choice")) {
-      setLessonChoiceValue("");
-      setLessonChoiceExplain("");
-      return;
-    }
-    const explain = !!lessonStateRef.current?.slideResponseConfig?.explain;
-    if (explain) {
-      try {
-        const parsed = JSON.parse(responseText);
-        if (parsed && typeof parsed === "object") {
-          const selection = (parsed as any).selection ?? "";
-          const explainText = (parsed as any).explain ?? "";
-          if (Array.isArray(selection)) {
-            setLessonChoiceValue(JSON.stringify(selection));
-          } else {
-            setLessonChoiceValue(typeof selection === "string" ? selection : "");
-          }
-          setLessonChoiceExplain(typeof explainText === "string" ? explainText : "");
-          return;
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    setLessonChoiceValue(responseText);
-    setLessonChoiceExplain("");
   };
 
   const saveLessonResponse = async (
@@ -504,53 +472,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!lessonState?.session.id || !lessonState.currentSlideId) return;
-    const responseType = lessonState.slideResponseType || "text";
-    const widgets = lessonState.slideResponseConfig?.widgets || (
-      responseType === "both" ? ["text", "drawing"] : [responseType]
-    );
-    if (!widgets.includes("choice")) return;
-    const explain = !!lessonState.slideResponseConfig?.explain;
-    const multi = !!lessonState.slideResponseConfig?.multi;
-    let payload = lessonChoiceValue;
-    if (explain) {
-      let selection: string | string[] = lessonChoiceValue;
-      if (multi) {
-        try {
-          const parsed = JSON.parse(lessonChoiceValue);
-          if (Array.isArray(parsed)) selection = parsed;
-        } catch {
-          selection = [];
-        }
-      }
-      payload = JSON.stringify({
-        selection,
-        explain: lessonChoiceExplain || "",
-      });
-    }
-    if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
-    lessonResponseTimerRef.current = setTimeout(() => {
-      saveLessonResponse(lessonState.session.id, lessonState.currentSlideId!, responseType, payload);
-    }, 700);
-    return () => {
-      if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
-    };
-  }, [
-    lessonChoiceValue,
-    lessonChoiceExplain,
-    lessonState?.session.id,
-    lessonState?.currentSlideId,
-    lessonState?.slideResponseType,
-    lessonState?.slideResponseConfig,
-  ]);
-
-  useEffect(() => {
-    if (!lessonState?.session.id || !lessonState.currentSlideId) return;
-    const responseType = lessonState.slideResponseType || "text";
-    const widgets = lessonState.slideResponseConfig?.widgets || (
-      responseType === "both" ? ["text", "drawing"] : [responseType]
-    );
-    // Choice widgets have their own serialization/autosave flow.
-    if (!widgets.includes("text") || widgets.includes("choice")) return;
+    const responseType = "text";
     if (lessonResponseTimerRef.current) clearTimeout(lessonResponseTimerRef.current);
     lessonResponseTimerRef.current = setTimeout(() => {
       saveLessonResponse(
@@ -567,8 +489,6 @@ export default function Home() {
     lessonResponseText,
     lessonState?.session.id,
     lessonState?.currentSlideId,
-    lessonState?.slideResponseType,
-    lessonState?.slideResponseConfig,
   ]);
 
   useEffect(() => {
@@ -596,6 +516,30 @@ export default function Home() {
     }, 1000);
     return () => clearInterval(interval);
   }, [lessonState?.session?.timerRunning, lessonState?.session?.timerEndsAt]);
+
+  const loadFormulaSheet = async () => {
+    setFormulaSheetLoading(true);
+    setFormulaSheetError(null);
+    try {
+      const res = await fetch("/api/formula-sheet");
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setFormulaSheetUrl(data?.exists ? data.url : null);
+    } catch (err: unknown) {
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "Failed to load formula sheet";
+      setFormulaSheetError(message);
+      setFormulaSheetUrl(null);
+    } finally {
+      setFormulaSheetLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFormulaSheet();
+  }, []);
 
   useEffect(() => {
     const isFrozen = !!lessonState?.session?.isFrozen;
@@ -790,9 +734,6 @@ export default function Home() {
 
             SLIDE RUBRIC:
             ${lessonState?.slideRubric?.length ? lessonState.slideRubric.join(" | ") : "No rubric provided."}
-
-            SLIDE RESPONSE TYPE:
-            ${lessonState?.slideResponseType || "text"}
 
             PACING MODE: ${lessonState?.session.mode || "instructor"}
 
@@ -1279,13 +1220,7 @@ export default function Home() {
               <div className="relative flex-1 min-w-0 min-h-0 bg-white">
                 {lessonState ? (
                   (() => {
-                    const rawWidgets: string[] = lessonState.slideResponseConfig?.widgets || (
-                      lessonState.slideResponseType === "both"
-                        ? ["text", "drawing"]
-                        : [lessonState.slideResponseType || "text"]
-                    );
-                    const widgets = Array.from(new Set([...(rawWidgets || []), "drawing"]));
-                    const showDrawing = widgets.includes("drawing");
+                    const showDrawing = true;
                     const digits = String(lessonState.lesson.pageCount || 1).length;
                     const slideFilename = `${String(lessonState.currentSlideIndex).padStart(digits, "0")}.png`;
                     const slideCacheKey = lessonState.currentSlideId
@@ -1377,23 +1312,24 @@ export default function Home() {
                         >
                           Calculator
                         </button>
+                        <button
+                          onClick={() => setLessonTab("formula")}
+                          className={`rounded-full px-3 py-1 ${
+                            lessonTab === "formula"
+                              ? "bg-sky-100 text-sky-700"
+                              : "text-zinc-600 hover:bg-zinc-100"
+                          }`}
+                        >
+                          Formula Sheet
+                        </button>
                       </div>
                       <div className="mt-2 flex-1 min-h-0">
                         <div className={lessonTab === "chat" ? "h-full" : "hidden"}>
                           <div className="flex h-full flex-col gap-2">
                             {lessonState &&
                               (() => {
-                                const responseType = lessonState.slideResponseType || "text";
-                                const widgets = lessonState.slideResponseConfig?.widgets || (
-                                  responseType === "both"
-                                    ? ["text", "drawing"]
-                                    : [responseType || "text"]
-                                );
-                                const showChoice = widgets.includes("choice");
-                                const showText = widgets.includes("text") && !showChoice;
-                                const choices = lessonState.slideResponseConfig?.choices || [];
-                                const multi = !!lessonState.slideResponseConfig?.multi;
-                                const explain = !!lessonState.slideResponseConfig?.explain;
+                                const responseType = "text";
+                                const showText = true;
                                 const disabled = !!lessonState.session?.isFrozen;
                                 const assessmentLabel = lessonState.slideAssessment?.label || "grey";
                                 if (!lessonState.currentSlideId || !lessonState.session?.id) return null;
@@ -1435,41 +1371,6 @@ export default function Home() {
                                         <div className="mt-2 text-[11px] text-red-600">{assessmentError}</div>
                                       ) : null}
                                     </div>
-                                    {showChoice ? (
-                                      <LessonChoiceWidget
-                                        choices={choices}
-                                        multi={multi}
-                                        value={lessonChoiceValue}
-                                        explain={explain}
-                                        explainValue={lessonChoiceExplain}
-                                        onExplainChange={setLessonChoiceExplain}
-                                        saving={lessonResponseSaving}
-                                        onChange={setLessonChoiceValue}
-                                        disabled={disabled}
-                                        onSubmit={() =>
-                                          saveLessonResponse(
-                                            lessonState.session.id,
-                                            lessonState.currentSlideId!,
-                                            responseType,
-                                            explain
-                                              ? JSON.stringify({
-                                                  selection: multi
-                                                    ? (() => {
-                                                        try {
-                                                          const parsed = JSON.parse(lessonChoiceValue);
-                                                          return Array.isArray(parsed) ? parsed : [];
-                                                        } catch {
-                                                          return [];
-                                                        }
-                                                      })()
-                                                    : lessonChoiceValue,
-                                                  explain: lessonChoiceExplain || "",
-                                                })
-                                              : lessonChoiceValue
-                                          )
-                                        }
-                                      />
-                                    ) : null}
                                     {showText ? (
                                       <div className="rounded-xl border border-zinc-200 bg-white p-3">
                                         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -1530,6 +1431,37 @@ export default function Home() {
                             className="w-full flex-1 border-none"
                             title="Desmos Calculator"
                           />
+                        </div>
+                        <div
+                          className={
+                            lessonTab === "formula"
+                              ? "flex h-full flex-col rounded-xl border border-zinc-200 bg-white"
+                              : "hidden"
+                          }
+                        >
+                          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200">
+                            <span className="text-xs font-semibold uppercase text-zinc-500">Formula Sheet</span>
+                            <button
+                              onClick={loadFormulaSheet}
+                              className="text-[11px] text-zinc-500 hover:text-zinc-700"
+                              disabled={formulaSheetLoading}
+                            >
+                              {formulaSheetLoading ? "Loading..." : "Refresh"}
+                            </button>
+                          </div>
+                          {formulaSheetError ? (
+                            <div className="p-3 text-xs text-rose-600">{formulaSheetError}</div>
+                          ) : formulaSheetUrl ? (
+                            <iframe
+                              src={formulaSheetUrl}
+                              className="w-full flex-1 border-none"
+                              title="Formula Sheet"
+                            />
+                          ) : (
+                            <div className="p-4 text-sm text-zinc-500">
+                              No formula sheet uploaded yet. Ask your teacher to upload one in settings.
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

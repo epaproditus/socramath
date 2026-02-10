@@ -10,6 +10,9 @@ export default function TeacherSettings() {
   const [configSaving, setConfigSaving] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [configSaved, setConfigSaved] = useState<string | null>(null);
+  const [formulaFile, setFormulaFile] = useState<File | null>(null);
+  const [formulaStatus, setFormulaStatus] = useState<string | null>(null);
+  const [formulaLoading, setFormulaLoading] = useState(false);
 
   const loadConfig = async () => {
     try {
@@ -142,6 +145,47 @@ export default function TeacherSettings() {
           >
             {configSaving ? "Saving..." : "Save"}
           </button>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold">Formula Sheet</h2>
+          <p className="text-sm text-zinc-500">
+            Upload a PDF that will appear in the student Formula Sheet tab.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={(e) => setFormulaFile(e.target.files?.[0] || null)}
+            className="text-sm"
+          />
+          <button
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            disabled={!formulaFile || formulaLoading}
+            onClick={async () => {
+              if (!formulaFile) return;
+              setFormulaLoading(true);
+              setFormulaStatus(null);
+              try {
+                const form = new FormData();
+                form.append("file", formulaFile);
+                const res = await fetch("/api/formula-sheet", { method: "POST", body: form });
+                if (!res.ok) throw new Error(await res.text());
+                setFormulaStatus("Uploaded.");
+                setFormulaFile(null);
+              } catch (err: any) {
+                setFormulaStatus(err?.message || "Upload failed.");
+              } finally {
+                setFormulaLoading(false);
+              }
+            }}
+          >
+            {formulaLoading ? "Uploading..." : "Upload PDF"}
+          </button>
+          {formulaStatus && <span className="text-xs text-zinc-500">{formulaStatus}</span>}
         </div>
       </div>
     </div>
