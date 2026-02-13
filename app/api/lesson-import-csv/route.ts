@@ -17,6 +17,17 @@ type QuestionRow = {
   order: number;
 };
 
+type CsvParseResult = {
+  data: CsvRow[];
+  meta: { fields?: string[] };
+  errors?: Array<Record<string, unknown>>;
+};
+
+type CanvasCtx = {
+  measureText: (text: string) => { width: number };
+  fillText: (text: string, x: number, y: number) => void;
+};
+
 const hasAnyValue = (row: CsvRow) =>
   Object.values(row || {}).some((value) => String(value || "").trim() !== "");
 
@@ -61,7 +72,7 @@ const readChoices = (row: CsvRow, headers: string[], explicitChoiceHeader: strin
 };
 
 const wrapText = (
-  ctx: CanvasRenderingContext2D,
+  ctx: CanvasCtx,
   text: string,
   x: number,
   y: number,
@@ -118,10 +129,10 @@ export async function POST(req: Request) {
   }
 
   const csvText = await file.text();
-  const parsed = Papa.parse<CsvRow>(csvText, {
+  const parsed = Papa.parse(csvText, {
     header: true,
     skipEmptyLines: true,
-  });
+  }) as CsvParseResult;
 
   const headers = parsed.meta.fields || [];
   const rows = parsed.data.filter(hasAnyValue);
@@ -138,7 +149,7 @@ export async function POST(req: Request) {
   const orderHeader = findHeader(headers, ["order", "order_index", "index", "question_number"]);
 
   const questionRows: QuestionRow[] = rows
-    .map((row, idx) => {
+    .map((row: CsvRow, idx: number) => {
       const prompt = normalizeText(String(row[promptHeader] || ""));
       if (!prompt) return null;
       const rubric = rubricHeader ? parseRubric(String(row[rubricHeader] || "")) : [];
@@ -149,8 +160,8 @@ export async function POST(req: Request) {
 
       return { prompt, rubric, choices, multi, order };
     })
-    .filter((row): row is QuestionRow => !!row)
-    .sort((a, b) => a.order - b.order);
+    .filter((row: QuestionRow | null): row is QuestionRow => !!row)
+    .sort((a: QuestionRow, b: QuestionRow) => a.order - b.order);
 
   if (!questionRows.length) {
     return new Response("Could not detect question rows. Include a prompt/question column.", {
@@ -190,23 +201,25 @@ export async function POST(req: Request) {
       },
     });
 
-    await tx.lessonSlide.createMany({
-      data: questionRows.map((row, idx) => ({
-        lessonId: created.id,
-        index: idx + 1,
-        text: row.prompt,
-        prompt: row.prompt,
-        rubric: row.rubric.length ? JSON.stringify(row.rubric) : null,
-        responseType: row.choices.length ? "both" : "text",
-        responseConfig: JSON.stringify(
-          defaultCsvResponseConfig({
-            prompt: row.prompt,
-            choices: row.choices,
-            multi: row.multi,
-          })
-        ),
-      })),
-    });
+    for (const [idx, row] of questionRows.entries()) {
+      await tx.lessonSlide.create({
+        data: {
+          lessonId: created.id,
+          index: idx + 1,
+          text: row.prompt,
+          prompt: row.prompt,
+          rubric: row.rubric.length ? JSON.stringify(row.rubric) : null,
+          responseType: row.choices.length ? "both" : "text",
+          responseConfig: JSON.stringify(
+            defaultCsvResponseConfig({
+              prompt: row.prompt,
+              choices: row.choices,
+              multi: row.multi,
+            })
+          ),
+        },
+      });
+    }
 
     return created;
   });

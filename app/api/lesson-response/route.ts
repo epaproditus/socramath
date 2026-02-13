@@ -323,7 +323,13 @@ export async function POST(req: Request) {
     },
   });
 
-  const stateUpdate: Record<string, unknown> = {
+  const stateUpdate: {
+    responseText: string;
+    responseJson: string | null;
+    drawingPath?: string;
+    drawingText?: string;
+    drawingSnapshot?: string | null;
+  } = {
     responseText,
     responseJson: responseJsonString,
   };
@@ -331,7 +337,16 @@ export async function POST(req: Request) {
   if (typeof drawingText === "string") stateUpdate.drawingText = drawingText;
   if (drawingSnapshot !== undefined) stateUpdate.drawingSnapshot = drawingSnapshot;
 
-  const stateCreate: Record<string, unknown> = {
+  const stateCreate: {
+    sessionId: string;
+    slideId: string;
+    userId: string;
+    responseText: string;
+    responseJson: string | null;
+    drawingPath?: string;
+    drawingText?: string;
+    drawingSnapshot?: string | null;
+  } = {
     sessionId,
     slideId,
     userId: session.user.id,

@@ -93,13 +93,25 @@ export async function POST(req: Request) {
     console.warn("lesson-drawing upsert skipped (readonly db)");
   }
 
-  const stateUpdate: Record<string, unknown> = {
+  const stateUpdate: {
+    drawingPath: string;
+    drawingText?: string;
+    drawingSnapshot?: string | null;
+  } = {
     drawingPath: publicPath,
   };
   if (typeof drawingText === "string") stateUpdate.drawingText = drawingText;
   if (drawingSnapshot !== undefined) stateUpdate.drawingSnapshot = drawingSnapshot;
 
-  const stateCreate: Record<string, unknown> = {
+  const stateCreate: {
+    sessionId: string;
+    slideId: string;
+    userId: string;
+    responseText: string;
+    drawingPath: string;
+    drawingText?: string;
+    drawingSnapshot?: string | null;
+  } = {
     sessionId,
     slideId,
     userId: session.user.id,

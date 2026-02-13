@@ -37,10 +37,16 @@ type HeatmapPayload = {
   responses: {
     key: string;
     response: string;
+    responseJson?: Record<string, unknown> | null;
     drawingPath: string;
     drawingText?: string;
     drawingSnapshot?: string | null;
     updatedAt: string;
+    completion?: {
+      requiredTotal: number;
+      requiredDone: number;
+      blockStatus?: Record<string, boolean>;
+    };
   }[];
   assessments?: { key: string; label: AssessmentLabel; reason?: string; updatedAt?: string }[];
 };
@@ -351,10 +357,16 @@ export default function TeacherHeatmap() {
   const responsesMap = useMemo(() => {
     const map = new Map<string, {
       response: string;
+      responseJson?: Record<string, unknown> | null;
       drawingPath: string;
       drawingText?: string;
       drawingSnapshot?: string | null;
       updatedAt: string;
+      completion?: {
+        requiredTotal: number;
+        requiredDone: number;
+        blockStatus?: Record<string, boolean>;
+      };
     }>();
     data?.responses.forEach((r) => map.set(r.key, r));
     return map;
@@ -744,6 +756,9 @@ export default function TeacherHeatmap() {
                     })();
                     const tooltip = [
                       cell?.updatedAt ? new Date(cell.updatedAt).toLocaleString() : "No response",
+                      cell?.completion
+                        ? `Completion: ${cell.completion.requiredDone}/${cell.completion.requiredTotal}`
+                        : "Completion: n/a",
                       assessment ? `Assessment: ${assessment.label}` : "Assessment: not assessed",
                       assessment?.reason ? `Reason: ${assessment.reason}` : "",
                     ]
@@ -784,6 +799,18 @@ export default function TeacherHeatmap() {
                 <span>Problem {selectedCell.slideIndex}</span>
                 <span>›</span>
                 <span className="font-semibold text-zinc-700">{selectedCell.studentName}</span>
+                {(() => {
+                  const cell = responsesMap.get(`${selectedCell.studentId}:${selectedCell.slideId}`);
+                  if (!cell?.completion) return null;
+                  return (
+                    <>
+                      <span>•</span>
+                      <span>
+                        Completion {cell.completion.requiredDone}/{cell.completion.requiredTotal}
+                      </span>
+                    </>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-2">
                 <button

@@ -710,7 +710,9 @@ export default function LessonSessionDashboard() {
                                     updateBlocks((current) =>
                                       current.map((item, idx) =>
                                         idx === blockIndex
-                                          ? { ...item, required: e.target.checked }
+                                          ? item.type === "prompt"
+                                            ? item
+                                            : { ...item, required: e.target.checked }
                                           : item
                                       )
                                     )
@@ -792,7 +794,9 @@ export default function LessonSessionDashboard() {
                                       updateBlocks((current) =>
                                         current.map((item, idx) =>
                                           idx === blockIndex
-                                            ? { ...item, required: e.target.checked }
+                                            ? item.type === "prompt"
+                                              ? item
+                                              : { ...item, required: e.target.checked }
                                             : item
                                         )
                                       )

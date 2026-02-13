@@ -10,8 +10,23 @@ import { SignIn } from "@/components/SignIn";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
 import LessonStage from "@/components/LessonStage";
 import { getRealtimeSocket } from "@/lib/realtime-client";
+import LessonBlockPanel from "@/components/LessonBlockPanel";
+import { LessonBlock } from "@/lib/lesson-blocks";
+import {
+  LessonResponseJson,
+  computeLessonSlideCompletion,
+  normalizeLessonResponseJson,
+} from "@/lib/lesson-response";
 
 type AssessmentLabel = "green" | "yellow" | "red" | "grey";
+
+type LessonSceneData = {
+  snapshot?: Record<string, unknown>;
+  elements?: unknown[];
+  files?: Record<string, unknown>;
+  appState?: Record<string, unknown>;
+  meta?: { width: number; height: number };
+};
 
 type LessonState = {
   lesson: {
@@ -36,7 +51,17 @@ type LessonState = {
   slidePrompt?: string;
   slideRubric?: string[];
   slideResponseType?: string;
-  slideResponseConfig?: Record<string, any>;
+  slideResponseConfig?: {
+    sceneData?: LessonSceneData;
+    [key: string]: unknown;
+  };
+  slideBlocks?: LessonBlock[];
+  slideResponseJson?: LessonResponseJson | null;
+  slideCompletion?: {
+    requiredTotal: number;
+    requiredDone: number;
+    blockStatus: Record<string, boolean>;
+  } | null;
   slideAssessment?: {
     label?: AssessmentLabel;
     reason?: string;
@@ -44,6 +69,7 @@ type LessonState = {
   } | null;
   slideWork?: {
     responseText?: string;
+    responseJson?: LessonResponseJson | null;
     drawingPath?: string;
     drawingText?: string;
     drawingSnapshot?:
@@ -89,6 +115,9 @@ export default function Home() {
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonDrawingTextBySlide, setLessonDrawingTextBySlide] = useState<Record<string, string>>({});
   const [lessonResponseTextBySlide, setLessonResponseTextBySlide] = useState<Record<string, string>>({});
+  const [lessonResponseJsonBySlide, setLessonResponseJsonBySlide] = useState<
+    Record<string, LessonResponseJson | null>
+  >({});
   const [lessonDrawingPathBySlide, setLessonDrawingPathBySlide] = useState<Record<string, string>>({});
   const [lessonDrawingSceneBySlide, setLessonDrawingSceneBySlide] = useState<
     Record<string, { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } }>
@@ -99,6 +128,8 @@ export default function Home() {
   const [formulaSheetLoading, setFormulaSheetLoading] = useState(false);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
+  const [blockSaving, setBlockSaving] = useState(false);
+  const [blockError, setBlockError] = useState<string | null>(null);
   const prevFrozenRef = useRef(false);
   const drawingSceneSignatureRef = useRef<Record<string, string>>({});
 
@@ -121,6 +152,10 @@ export default function Home() {
   useEffect(() => {
     lessonResponseTextRef.current = lessonResponseTextBySlide;
   }, [lessonResponseTextBySlide]);
+  const lessonResponseJsonRef = useRef<Record<string, LessonResponseJson | null>>({});
+  useEffect(() => {
+    lessonResponseJsonRef.current = lessonResponseJsonBySlide;
+  }, [lessonResponseJsonBySlide]);
   const lessonDrawingPathRef = useRef<Record<string, string>>({});
   useEffect(() => {
     lessonDrawingPathRef.current = lessonDrawingPathBySlide;
@@ -190,11 +225,29 @@ export default function Home() {
       const json = await res.json();
       const slideId = json?.currentSlideId as string | null | undefined;
       const slideWork = json?.slideWork as LessonState["slideWork"];
+      const slideResponseJson =
+        json?.slideResponseJson !== undefined && json?.slideResponseJson !== null
+          ? normalizeLessonResponseJson(json.slideResponseJson)
+          : null;
       if (slideId && slideWork) {
         if (typeof slideWork.responseText === "string") {
           setLessonResponseTextBySlide((prev) => {
             if ((prev[slideId] || "") === slideWork.responseText) return prev;
             return { ...prev, [slideId]: slideWork.responseText || "" };
+          });
+        }
+        if (slideWork.responseJson && typeof slideWork.responseJson === "object") {
+          const normalized = normalizeLessonResponseJson(slideWork.responseJson);
+          setLessonResponseJsonBySlide((prev) => {
+            const existing = prev[slideId];
+            if (existing && JSON.stringify(existing) === JSON.stringify(normalized)) return prev;
+            return { ...prev, [slideId]: normalized };
+          });
+        } else if (slideResponseJson) {
+          setLessonResponseJsonBySlide((prev) => {
+            const existing = prev[slideId];
+            if (existing && JSON.stringify(existing) === JSON.stringify(slideResponseJson)) return prev;
+            return { ...prev, [slideId]: slideResponseJson };
           });
         }
         if (typeof slideWork.drawingText === "string") {
@@ -236,6 +289,13 @@ export default function Home() {
           });
         }
       }
+      if (slideId && !slideWork?.responseJson && slideResponseJson) {
+        setLessonResponseJsonBySlide((prev) => {
+          const existing = prev[slideId];
+          if (existing && JSON.stringify(existing) === JSON.stringify(slideResponseJson)) return prev;
+          return { ...prev, [slideId]: slideResponseJson };
+        });
+      }
       setLessonState(json);
       if (preferLesson || activeExperienceRef.current === "test") {
         setActiveExperience("lesson");
@@ -256,6 +316,12 @@ export default function Home() {
         if ((prev[slideId] || "") === "") return prev;
         return { ...prev, [slideId]: "" };
       });
+      setLessonResponseJsonBySlide((prev) => {
+        if (!prev[slideId]) return prev;
+        const next = { ...prev };
+        delete next[slideId];
+        return next;
+      });
       return;
     }
     const json = await res.json();
@@ -264,6 +330,17 @@ export default function Home() {
       if ((prev[slideId] || "") === responseText) return prev;
       return { ...prev, [slideId]: responseText };
     });
+    const responseJson =
+      json?.responseJson && typeof json.responseJson === "object"
+        ? normalizeLessonResponseJson(json.responseJson)
+        : null;
+    if (responseJson) {
+      setLessonResponseJsonBySlide((prev) => {
+        const existing = prev[slideId];
+        if (existing && JSON.stringify(existing) === JSON.stringify(responseJson)) return prev;
+        return { ...prev, [slideId]: responseJson };
+      });
+    }
     const drawingText = typeof json?.drawingText === "string" ? json.drawingText : "";
     setLessonDrawingTextBySlide((prev) => {
       if ((prev[slideId] || "") === drawingText) return prev;
@@ -402,6 +479,103 @@ export default function Home() {
         meta: payload.meta,
       },
     }));
+  };
+
+  const handleLessonBlockResponseChange = (next: LessonResponseJson) => {
+    const current = lessonStateRef.current;
+    if (!current?.currentSlideId) return;
+    const slideId = current.currentSlideId;
+    setLessonResponseJsonBySlide((prev) => ({
+      ...prev,
+      [slideId]: next,
+    }));
+
+    const completion = computeLessonSlideCompletion({
+      blocks: current.slideBlocks || [],
+      responseJson: next,
+      drawingPath:
+        lessonDrawingPathRef.current[slideId] ||
+        current.slideWork?.drawingPath ||
+        "",
+      drawingText:
+        lessonDrawingTextRef.current[slideId] ||
+        current.slideWork?.drawingText ||
+        "",
+    });
+
+    setLessonState((prev) => {
+      if (!prev || prev.currentSlideId !== slideId) return prev;
+      return {
+        ...prev,
+        slideResponseJson: next,
+        slideCompletion: completion,
+        slideWork: {
+          ...(prev.slideWork || {}),
+          responseJson: next,
+        },
+      };
+    });
+  };
+
+  const submitLessonBlocks = async () => {
+    const current = lessonStateRef.current;
+    if (!current?.session?.id || !current.currentSlideId) return;
+    const slideId = current.currentSlideId;
+    const responseJson =
+      lessonResponseJsonRef.current[slideId] || current.slideResponseJson || null;
+    const responseText =
+      lessonResponseTextRef.current[slideId] || current.slideWork?.responseText || "";
+    const drawingPath =
+      lessonDrawingPathRef.current[slideId] || current.slideWork?.drawingPath || "";
+    const drawingText =
+      lessonDrawingTextRef.current[slideId] || current.slideWork?.drawingText || "";
+
+    setBlockSaving(true);
+    setBlockError(null);
+    try {
+      const res = await fetch("/api/lesson-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: current.session.id,
+          slideId,
+          response: responseText,
+          responseJson,
+          responseType: current.slideResponseType || "text",
+          drawingPath,
+          drawingText,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to save slide blocks");
+      }
+      const payload = await res.json().catch(() => null);
+      if (payload?.response && typeof payload.response === "string") {
+        setLessonResponseTextBySlide((prev) => ({
+          ...prev,
+          [slideId]: payload.response,
+        }));
+      }
+      if (payload?.responseJson && typeof payload.responseJson === "object") {
+        setLessonResponseJsonBySlide((prev) => ({
+          ...prev,
+          [slideId]: normalizeLessonResponseJson(payload.responseJson),
+        }));
+      }
+      await Promise.all([
+        loadLessonState(),
+        loadLessonResponse(current.session.id, slideId),
+      ]);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to save slide blocks";
+      setBlockError(message);
+    } finally {
+      setBlockSaving(false);
+    }
   };
 
   const assessCurrentSlide = async () => {
@@ -640,10 +814,15 @@ export default function Home() {
       const isLesson = activeExperienceRef.current === "lesson" && !!lessonState;
       const drawingTextMap = lessonDrawingTextRef.current || {};
       const responseTextMap = lessonResponseTextRef.current || {};
+      const responseJsonMap = lessonResponseJsonRef.current || {};
       const currentSlideResponseText =
         lessonState?.currentSlideId && responseTextMap[lessonState.currentSlideId]
           ? responseTextMap[lessonState.currentSlideId]
           : lessonState?.slideWork?.responseText || "";
+      const currentSlideResponseJson =
+        lessonState?.currentSlideId && responseJsonMap[lessonState.currentSlideId]
+          ? responseJsonMap[lessonState.currentSlideId]
+          : lessonState?.slideResponseJson || null;
       const drawingTextSummary = (() => {
         if (!lessonState?.slides?.length) return "";
         const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
@@ -655,6 +834,19 @@ export default function Home() {
             const idx = byIndex.get(id) || "?";
             const cleaned = text.replace(/\s+/g, " ").trim();
             return `Slide ${idx}: ${cleaned.slice(0, 200)}`;
+          });
+        return entries.length ? entries.join("\n") : "None.";
+      })();
+      const responseJsonSummary = (() => {
+        if (!lessonState?.slides?.length) return "";
+        const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
+        const entries = Object.entries(responseJsonMap)
+          .filter(([, value]) => value && Object.keys(value.blocks || {}).length > 0)
+          .sort((a, b) => (byIndex.get(a[0]) || 0) - (byIndex.get(b[0]) || 0))
+          .slice(0, 10)
+          .map(([id, value]) => {
+            const idx = byIndex.get(id) || "?";
+            return `Slide ${idx}: ${JSON.stringify(value).slice(0, 280)}`;
           });
         return entries.length ? entries.join("\n") : "None.";
       })();
@@ -698,6 +890,8 @@ export default function Home() {
             ${lessonState?.slideText || "No slide text extracted."}
             SLIDE PROMPT:
             ${lessonState?.slidePrompt || "No prompt provided."}
+            CURRENT SLIDE BLOCKS:
+            ${JSON.stringify(lessonState?.slideBlocks || [])}
 
             SLIDE RUBRIC:
             ${lessonState?.slideRubric?.length ? lessonState.slideRubric.join(" | ") : "No rubric provided."}
@@ -706,9 +900,13 @@ export default function Home() {
 
             STUDENT TYPED RESPONSE (current slide):
             ${currentSlideResponseText ? currentSlideResponseText.slice(0, 800) : "None."}
+            STUDENT STRUCTURED BLOCK RESPONSES (current slide):
+            ${currentSlideResponseJson ? JSON.stringify(currentSlideResponseJson) : "None."}
 
             STUDENT TYPED RESPONSES (other slides):
             ${responseTextSummary}
+            STUDENT STRUCTURED BLOCK RESPONSES (other slides):
+            ${responseJsonSummary}
 
             STUDENT DRAWING TEXT (from annotations on the slide):
             ${lessonState?.currentSlideId && drawingTextMap[lessonState.currentSlideId]
@@ -1329,6 +1527,32 @@ export default function Home() {
                                   </>
                                 );
                               })()}
+                            {lessonState?.currentSlideId && (
+                              <div className="px-1">
+                                <LessonBlockPanel
+                                  blocks={lessonState.slideBlocks || []}
+                                  responseJson={
+                                    lessonResponseJsonBySlide[lessonState.currentSlideId] ||
+                                    lessonState.slideResponseJson ||
+                                    null
+                                  }
+                                  completion={lessonState.slideCompletion || null}
+                                  drawingReady={
+                                    !!(
+                                      lessonDrawingPathBySlide[lessonState.currentSlideId] ||
+                                      lessonDrawingTextBySlide[lessonState.currentSlideId]
+                                    )
+                                  }
+                                  disabled={!!lessonState.session?.isFrozen}
+                                  saving={blockSaving}
+                                  onChange={handleLessonBlockResponseChange}
+                                  onSubmit={submitLessonBlocks}
+                                />
+                                {blockError ? (
+                                  <div className="mt-1 text-[11px] text-red-600">{blockError}</div>
+                                ) : null}
+                              </div>
+                            )}
                             <div className="flex-1 min-h-0">
                               <Thread />
                             </div>
