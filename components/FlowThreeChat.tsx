@@ -31,7 +31,7 @@ const readShapeRecords = (snapshot: TLEditorSnapshot) => {
   const records: Record<string, unknown>[] = [];
   const root =
     snapshot && typeof snapshot === "object"
-      ? (snapshot as Record<string, unknown>)
+      ? (snapshot as unknown as Record<string, unknown>)
       : null;
   if (!root) return records;
 
