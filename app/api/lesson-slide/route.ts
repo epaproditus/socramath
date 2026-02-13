@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { defaultPdfResponseConfig, normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
 import prisma from "@/lib/prisma";
 import { access, mkdir, rename, unlink, writeFile } from "fs/promises";
 import path from "path";
@@ -24,6 +25,13 @@ export async function GET(req: Request) {
 
   const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId } });
   if (!slide) return new Response("Slide not found", { status: 404 });
+  const responseConfig = normalizeLessonResponseConfig(
+    slide.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    {
+      responseType: slide.responseType || "text",
+      prompt: slide.prompt || "",
+    }
+  );
 
   return Response.json({
     id: slide.id,
@@ -32,7 +40,7 @@ export async function GET(req: Request) {
     prompt: slide.prompt || "",
     rubric: slide.rubric ? JSON.parse(slide.rubric) : [],
     responseType: slide.responseType || "text",
-    responseConfig: slide.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    responseConfig,
   });
 }
 
@@ -62,7 +70,10 @@ export async function POST(req: Request) {
       lessonId,
       index: nextIndex,
       text: "",
-      responseConfig: JSON.stringify({ scratch: true }),
+      responseConfig: JSON.stringify({
+        ...defaultPdfResponseConfig(),
+        scratch: true,
+      }),
     },
   });
 
@@ -167,7 +178,13 @@ export async function PATCH(req: Request) {
         existingSlide.responseConfig && existingSlide.responseConfig.trim().length
           ? (JSON.parse(existingSlide.responseConfig) as Record<string, unknown>)
           : {};
-      mergedResponseConfig = { ...baseConfig, ...(responseConfig || {}) };
+      mergedResponseConfig = normalizeLessonResponseConfig(
+        { ...baseConfig, ...(responseConfig || {}) },
+        {
+          responseType,
+          prompt,
+        }
+      );
       if (sceneData) {
         mergedResponseConfig.sceneData = sceneData;
       }

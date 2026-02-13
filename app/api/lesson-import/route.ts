@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { defaultPdfResponseConfig } from "@/lib/lesson-blocks";
 import prisma from "@/lib/prisma";
 import pdfParse from "pdf-parse";
 import { mkdir, writeFile, rm, readdir, rename } from "fs/promises";
@@ -6,6 +7,9 @@ import path from "path";
 import { spawn } from "child_process";
 
 export const runtime = "nodejs";
+
+type PdfTextItem = { str?: string };
+type PdfTextContent = { items: PdfTextItem[] };
 
 
 function normalizeText(input: string) {
@@ -37,10 +41,10 @@ export async function POST(req: Request) {
   const parsePdf = async (input: Buffer) => {
     const pageTexts: string[] = [];
     const parsed = await pdfParse(input, {
-      pagerender: (pageData: any) =>
-        pageData.getTextContent().then((tc: any) => {
+      pagerender: (pageData: { getTextContent: () => Promise<PdfTextContent> }) =>
+        pageData.getTextContent().then((tc) => {
           const text = tc.items
-            .map((item: any) => ("str" in item ? item.str : ""))
+            .map((item) => (typeof item?.str === "string" ? item.str : ""))
             .join(" ");
           const normalized = normalizeText(text);
           pageTexts.push(normalized);
@@ -109,6 +113,7 @@ export async function POST(req: Request) {
             lessonId: lesson.id,
             index: idx + 1,
             text,
+            responseConfig: JSON.stringify(defaultPdfResponseConfig()),
           },
         })
       )
@@ -121,6 +126,7 @@ export async function POST(req: Request) {
             lessonId: lesson.id,
             index: idx + 1,
             text: "",
+            responseConfig: JSON.stringify(defaultPdfResponseConfig()),
           },
         })
       )

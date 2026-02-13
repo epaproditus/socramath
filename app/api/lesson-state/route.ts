@@ -1,4 +1,9 @@
 import { auth } from "@/auth";
+import { normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
+import {
+  computeLessonSlideCompletion,
+  parseLessonResponseJson,
+} from "@/lib/lesson-response";
 import prisma from "@/lib/prisma";
 import { emitRealtime } from "@/lib/realtime";
 
@@ -192,10 +197,24 @@ export async function GET() {
   await ensureAssessmentTable().catch((err) => {
     if (!isReadonlyError(err)) throw err;
   });
-  const slideWork =
+  const [slideWork, lessonResponse] =
     slide?.id
-      ? await prisma.lessonStudentSlideState
-          .findUnique({
+      ? await Promise.all([
+          prisma.lessonStudentSlideState
+            .findUnique({
+              where: {
+                sessionId_slideId_userId: {
+                  sessionId: lessonSession.id,
+                  slideId: slide.id,
+                  userId: session.user.id,
+                },
+              },
+            })
+            .catch((err) => {
+              if (isMissingTableError(err)) return null;
+              throw err;
+            }),
+          prisma.lessonResponse.findUnique({
             where: {
               sessionId_slideId_userId: {
                 sessionId: lessonSession.id,
@@ -203,12 +222,9 @@ export async function GET() {
                 userId: session.user.id,
               },
             },
-          })
-          .catch((err) => {
-            if (isMissingTableError(err)) return null;
-            throw err;
-          })
-      : null;
+          }),
+        ])
+      : [null, null];
   const slideAssessment =
     slide?.id
       ? await prisma
@@ -235,6 +251,22 @@ export async function GET() {
       drawingSnapshot = null;
     }
   }
+  const slideResponseConfig = normalizeLessonResponseConfig(
+    slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    {
+      responseType: slide?.responseType || "text",
+      prompt: slide?.prompt || "",
+    }
+  );
+  const slideResponseJson = parseLessonResponseJson(
+    slideWork?.responseJson ?? lessonResponse?.responseJson ?? null
+  );
+  const slideCompletion = computeLessonSlideCompletion({
+    blocks: slideResponseConfig.blocks,
+    responseJson: slideResponseJson,
+    drawingPath: slideWork?.drawingPath ?? lessonResponse?.drawingPath ?? "",
+    drawingText: slideWork?.drawingText ?? "",
+  });
 
   return Response.json({
     lesson: {
@@ -260,7 +292,10 @@ export async function GET() {
     slidePrompt: slide?.prompt || "",
     slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
     slideResponseType: slide?.responseType || "text",
-    slideResponseConfig: slide?.responseConfig ? JSON.parse(slide.responseConfig) : {},
+    slideResponseConfig,
+    slideBlocks: slideResponseConfig.blocks,
+    slideResponseJson,
+    slideCompletion,
     slideAssessment: slideAssessment
       ? {
           label: slideAssessment.label,
@@ -268,13 +303,14 @@ export async function GET() {
           updatedAt: toIsoString(slideAssessment.updatedAt),
         }
       : null,
-    slideWork: slideWork
+    slideWork: slideWork || lessonResponse
       ? {
-          responseText: slideWork.responseText || "",
-          drawingPath: slideWork.drawingPath || "",
-          drawingText: slideWork.drawingText || "",
+          responseText: slideWork?.responseText || lessonResponse?.response || "",
+          responseJson: slideResponseJson,
+          drawingPath: slideWork?.drawingPath || lessonResponse?.drawingPath || "",
+          drawingText: slideWork?.drawingText || "",
           drawingSnapshot,
-          updatedAt: slideWork.updatedAt,
+          updatedAt: slideWork?.updatedAt || lessonResponse?.updatedAt,
         }
       : null,
     slides,

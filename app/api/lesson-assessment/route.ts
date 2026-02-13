@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
+import {
+  parseLessonResponseJson,
+  summarizeLessonResponseJson,
+} from "@/lib/lesson-response";
 import prisma from "@/lib/prisma";
 import { emitRealtime } from "@/lib/realtime";
 
@@ -386,7 +391,13 @@ export async function POST(req: Request) {
   const [lessonSlides, responses, studentStates, sessionStates] = await Promise.all([
     prisma.lessonSlide.findMany({
       where: { lessonId: lessonSession.lessonId },
-      select: { id: true, index: true },
+      select: {
+        id: true,
+        index: true,
+        responseConfig: true,
+        responseType: true,
+        prompt: true,
+      },
       orderBy: { index: "asc" },
     }),
     prisma.lessonResponse.findMany({
@@ -430,19 +441,39 @@ export async function POST(req: Request) {
     updatedAt: Date;
   };
   const slideIndexMap = new Map(lessonSlides.map((item) => [item.id, item.index]));
+  const slideConfigById = new Map(
+    lessonSlides.map((item) => [
+      item.id,
+      normalizeLessonResponseConfig(
+        item.responseConfig ? JSON.parse(item.responseConfig) : {},
+        {
+          responseType: item.responseType || "text",
+          prompt: item.prompt || "",
+        }
+      ),
+    ])
+  );
   const workByUserSlide = new Map<string, WorkCell>();
   const rosterByUser = new Map<string, { userId: string; name: string }>();
 
   for (const response of responses) {
     const userName = response.user?.name || response.user?.email || "Student";
     rosterByUser.set(response.userId, { userId: response.userId, name: userName });
+    const responseJson = parseLessonResponseJson(response.responseJson);
+    const blockSummary = summarizeLessonResponseJson({
+      blocks: slideConfigById.get(response.slideId)?.blocks || [],
+      responseJson,
+      fallbackText: response.response || "",
+      drawingPath: response.drawingPath || "",
+      drawingText: "",
+    });
     const key = `${response.userId}:${response.slideId}`;
     workByUserSlide.set(key, {
       userId: response.userId,
       slideId: response.slideId,
       slideIndex: response.slide?.index || slideIndexMap.get(response.slideId) || 0,
       name: userName,
-      responseText: response.response || "",
+      responseText: blockSummary || response.response || "",
       drawingText: "",
       drawingPath: response.drawingPath || "",
       updatedAt: response.updatedAt,
@@ -455,12 +486,20 @@ export async function POST(req: Request) {
     const key = `${state.userId}:${state.slideId}`;
     const existing = workByUserSlide.get(key);
     if (existing && existing.updatedAt > state.updatedAt) continue;
+    const responseJson = parseLessonResponseJson(state.responseJson);
+    const blockSummary = summarizeLessonResponseJson({
+      blocks: slideConfigById.get(state.slideId)?.blocks || [],
+      responseJson,
+      fallbackText: state.responseText || existing?.responseText || "",
+      drawingPath: state.drawingPath || existing?.drawingPath || "",
+      drawingText: state.drawingText || "",
+    });
     workByUserSlide.set(key, {
       userId: state.userId,
       slideId: state.slideId,
       slideIndex: state.slide?.index || slideIndexMap.get(state.slideId) || existing?.slideIndex || 0,
       name: userName || existing?.name || "Student",
-      responseText: state.responseText || existing?.responseText || "",
+      responseText: blockSummary || state.responseText || existing?.responseText || "",
       drawingText: state.drawingText || "",
       drawingPath: state.drawingPath || existing?.drawingPath || "",
       updatedAt: state.updatedAt,
