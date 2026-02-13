@@ -438,6 +438,27 @@ export default function Home() {
           ...prev,
           [slideId]: json.drawingPath,
         }));
+        const completion = computeLessonSlideCompletion({
+          blocks: current.slideBlocks || [],
+          responseJson:
+            lessonResponseJsonRef.current[slideId] || current.slideResponseJson || null,
+          drawingPath: json.drawingPath,
+          drawingText:
+            lessonDrawingTextRef.current[slideId] ||
+            current.slideWork?.drawingText ||
+            "",
+        });
+        setLessonState((prev) => {
+          if (!prev || prev.currentSlideId !== slideId) return prev;
+          return {
+            ...prev,
+            slideCompletion: completion,
+            slideWork: {
+              ...(prev.slideWork || {}),
+              drawingPath: json.drawingPath,
+            },
+          };
+        });
       }
     }
   };
@@ -1413,9 +1434,33 @@ export default function Home() {
                           onDrawingTextChange={(text) => {
                             const slideId = lessonState.currentSlideId;
                             if (!slideId) return;
+                            const nextText = text || "";
                             setLessonDrawingTextBySlide((prev) => {
-                              if ((prev[slideId] || "") === (text || "")) return prev;
-                              return { ...prev, [slideId]: text };
+                              if ((prev[slideId] || "") === nextText) return prev;
+                              return { ...prev, [slideId]: nextText };
+                            });
+                            const completion = computeLessonSlideCompletion({
+                              blocks: lessonState.slideBlocks || [],
+                              responseJson:
+                                lessonResponseJsonRef.current[slideId] ||
+                                lessonState.slideResponseJson ||
+                                null,
+                              drawingPath:
+                                lessonDrawingPathRef.current[slideId] ||
+                                lessonState.slideWork?.drawingPath ||
+                                "",
+                              drawingText: nextText,
+                            });
+                            setLessonState((prev) => {
+                              if (!prev || prev.currentSlideId !== slideId) return prev;
+                              return {
+                                ...prev,
+                                slideCompletion: completion,
+                                slideWork: {
+                                  ...(prev.slideWork || {}),
+                                  drawingText: nextText,
+                                },
+                              };
                             });
                           }}
                         />
