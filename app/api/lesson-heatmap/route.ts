@@ -1,10 +1,4 @@
 import { auth } from "@/auth";
-import { normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
-import { parseLessonPaceConfig, resolveVisibleLessonBlocks } from "@/lib/lesson-pace";
-import {
-  computeLessonSlideCompletion,
-  parseLessonResponseJson,
-} from "@/lib/lesson-response";
 import prisma from "@/lib/prisma";
 
 const isMissingTableError = (err: unknown) =>
@@ -46,15 +40,6 @@ type AssessmentRow = {
   updatedAt: string | number | Date;
 };
 
-const readStoredPaceConfig = (raw: string | null) => {
-  if (!raw) return null;
-  try {
-    return parseLessonPaceConfig(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-};
-
 export async function GET() {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -81,31 +66,11 @@ export async function GET() {
     return new Response("No active lesson session", { status: 404 });
   }
 
-  const slideRows = await prisma.lessonSlide.findMany({
+  const slides = await prisma.lessonSlide.findMany({
     where: { lessonId: lesson.id },
     orderBy: { index: "asc" },
-    select: {
-      id: true,
-      index: true,
-      responseConfig: true,
-      responseType: true,
-      prompt: true,
-    },
+    select: { id: true, index: true },
   });
-  const slides = slideRows.map((slide) => ({ id: slide.id, index: slide.index }));
-  const paceConfig = readStoredPaceConfig(lessonSession.paceConfig);
-  const slideConfigById = new Map(
-    slideRows.map((slide) => [
-      slide.id,
-      normalizeLessonResponseConfig(
-        slide.responseConfig ? JSON.parse(slide.responseConfig) : {},
-        {
-          responseType: slide.responseType || "text",
-          prompt: slide.prompt || "",
-        }
-      ),
-    ])
-  );
 
   await ensureAssessmentTable();
   const [responses, states, studentSlideStates, assessments] = await Promise.all([
@@ -174,7 +139,6 @@ export async function GET() {
 
   const cellMap = new Map<string, {
     response: string;
-    responseJson: ReturnType<typeof parseLessonResponseJson>;
     drawingPath: string;
     drawingText: string;
     drawingSnapshot: string | null;
@@ -183,7 +147,6 @@ export async function GET() {
   for (const response of responses) {
     cellMap.set(`${response.userId}:${response.slideId}`, {
       response: response.response || "",
-      responseJson: parseLessonResponseJson(response.responseJson),
       drawingPath: response.drawingPath || "",
       drawingText: "",
       drawingSnapshot: null,
@@ -203,10 +166,6 @@ export async function GET() {
     }
     cellMap.set(key, {
       response: studentState.responseText || existing?.response || "",
-      responseJson:
-        parseLessonResponseJson(studentState.responseJson) ||
-        existing?.responseJson ||
-        null,
       drawingPath: studentState.drawingPath || existing?.drawingPath || "",
       drawingText: studentState.drawingText || "",
       drawingSnapshot: snapshot ?? existing?.drawingSnapshot ?? null,
@@ -225,7 +184,7 @@ export async function GET() {
       mode: lessonSession.mode,
       currentSlideIndex: lessonSession.currentSlideIndex,
       isFrozen: lessonSession.isFrozen,
-      paceConfig,
+      paceConfig: lessonSession.paceConfig ? JSON.parse(lessonSession.paceConfig) : null,
       timerEndsAt: lessonSession.timerEndsAt,
       timerRemainingSec: lessonSession.timerRemainingSec,
       timerRunning: lessonSession.timerRunning,
@@ -238,34 +197,8 @@ export async function GET() {
       updatedAt: state.updatedAt.toISOString(),
     })),
     responses: Array.from(cellMap.entries()).map(([key, value]) => ({
-      ...(function () {
-        const [userId, slideId] = key.split(":");
-        const slideConfig = slideConfigById.get(slideId) || null;
-        const visibleBlocks = resolveVisibleLessonBlocks({
-          blocks: slideConfig?.blocks || [],
-          slideId,
-          paceConfig,
-          responseConfig: slideConfig,
-        });
-        const completion = computeLessonSlideCompletion({
-          blocks: visibleBlocks,
-          responseJson: value.responseJson || null,
-          drawingPath: value.drawingPath,
-          drawingText: value.drawingText,
-        });
-        return {
-          key,
-          userId,
-          slideId,
-          response: value.response,
-          responseJson: value.responseJson,
-          drawingPath: value.drawingPath,
-          drawingText: value.drawingText,
-          drawingSnapshot: value.drawingSnapshot,
-          updatedAt: value.updatedAt,
-          completion,
-        };
-      })(),
+      key,
+      ...value,
     })),
     assessments: assessments.map((assessment) => ({
       key: `${assessment.userId}:${assessment.slideId}`,

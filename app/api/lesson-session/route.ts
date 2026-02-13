@@ -1,16 +1,6 @@
 import { auth } from "@/auth";
-import { mergeLessonPaceConfig, parseLessonPaceConfig } from "@/lib/lesson-pace";
 import prisma from "@/lib/prisma";
 import { emitRealtime } from "@/lib/realtime";
-
-const readStoredPaceConfig = (raw: string | null) => {
-  if (!raw) return null;
-  try {
-    return parseLessonPaceConfig(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-};
 
 
 export async function GET() {
@@ -87,7 +77,7 @@ export async function GET() {
       mode: sessionRow.mode,
       currentSlideIndex: sessionRow.currentSlideIndex,
       isFrozen: sessionRow.isFrozen,
-      paceConfig: readStoredPaceConfig(sessionRow.paceConfig),
+      paceConfig: sessionRow.paceConfig ? JSON.parse(sessionRow.paceConfig) : null,
       timerEndsAt: sessionRow.timerEndsAt,
       timerRemainingSec: sessionRow.timerRemainingSec,
       timerRunning: sessionRow.timerRunning,
@@ -110,23 +100,7 @@ export async function PATCH(req: Request) {
     return new Response("Missing sessionId", { status: 400 });
   }
 
-  const existingSession = await prisma.lessonSession.findUnique({
-    where: { id: sessionId },
-    select: { paceConfig: true },
-  });
-  if (!existingSession) {
-    return new Response("Lesson session not found", { status: 404 });
-  }
-
-  const data: {
-    mode?: "instructor" | "student";
-    currentSlideIndex?: number;
-    isFrozen?: boolean;
-    timerRunning?: boolean;
-    timerRemainingSec?: number;
-    timerEndsAt?: Date | null;
-    paceConfig?: string | null;
-  } = {};
+  const data: Record<string, any> = {};
   if (body?.mode === "instructor" || body?.mode === "student") {
     data.mode = body.mode;
   }
@@ -145,11 +119,8 @@ export async function PATCH(req: Request) {
   if (typeof body?.timerEndsAt === "string" || body?.timerEndsAt === null) {
     data.timerEndsAt = body.timerEndsAt ? new Date(body.timerEndsAt) : null;
   }
-  if (body && Object.prototype.hasOwnProperty.call(body, "paceConfig")) {
-    let existingPaceConfig = null;
-    existingPaceConfig = readStoredPaceConfig(existingSession.paceConfig);
-    const mergedPaceConfig = mergeLessonPaceConfig(existingPaceConfig, body.paceConfig);
-    data.paceConfig = mergedPaceConfig ? JSON.stringify(mergedPaceConfig) : null;
+  if (body?.paceConfig && typeof body.paceConfig === "object") {
+    data.paceConfig = JSON.stringify(body.paceConfig);
   }
 
   if (!Object.keys(data).length) {

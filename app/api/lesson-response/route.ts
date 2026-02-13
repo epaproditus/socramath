@@ -1,11 +1,4 @@
 import { auth } from "@/auth";
-import { normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
-import {
-  normalizeLessonResponseJson,
-  parseLessonResponseJson,
-  stringifyLessonResponseJson,
-  summarizeLessonResponseJson,
-} from "@/lib/lesson-response";
 import prisma from "@/lib/prisma";
 import { emitRealtime } from "@/lib/realtime";
 
@@ -75,13 +68,8 @@ export async function GET(req: Request) {
       }
     }
 
-    const responseJson = parseLessonResponseJson(
-      studentState?.responseJson ?? response?.responseJson ?? null
-    );
-
     return Response.json({
       response: studentState?.responseText ?? response?.response ?? "",
-      responseJson,
       drawingPath: studentState?.drawingPath ?? response?.drawingPath ?? "",
       drawingText: studentState?.drawingText ?? "",
       drawingSnapshot,
@@ -114,7 +102,6 @@ export async function GET(req: Request) {
   type Row = {
     id: string;
     response: string;
-    responseJson: ReturnType<typeof parseLessonResponseJson>;
     responseType: string;
     drawingPath: string;
     drawingText: string;
@@ -132,7 +119,6 @@ export async function GET(req: Request) {
     rows.set(response.userId, {
       id: response.id,
       response: response.response || "",
-      responseJson: parseLessonResponseJson(response.responseJson),
       responseType: response.responseType || "text",
       drawingPath: response.drawingPath || "",
       drawingText: "",
@@ -152,8 +138,6 @@ export async function GET(req: Request) {
     rows.set(state.userId, {
       id: existing?.id || state.id,
       response: state.responseText || existing?.response || "",
-      responseJson:
-        parseLessonResponseJson(state.responseJson) || existing?.responseJson || null,
       responseType: existing?.responseType || "text",
       drawingPath: state.drawingPath || existing?.drawingPath || "",
       drawingText: state.drawingText || "",
@@ -173,7 +157,6 @@ export async function GET(req: Request) {
       .map((row) => ({
         id: row.id,
         response: row.response,
-        responseJson: row.responseJson,
         responseType: row.responseType,
         drawingPath: row.drawingPath,
         drawingText: row.drawingText,
@@ -192,19 +175,10 @@ export async function POST(req: Request) {
   const body = await req.json();
   const sessionId = body?.sessionId as string | undefined;
   const slideId = body?.slideId as string | undefined;
-  const responseTextInput =
-    typeof body?.response === "string" ? body.response : undefined;
-  const responseTypeInput =
-    typeof body?.responseType === "string" ? body.responseType : undefined;
-  const drawingPath =
-    typeof body?.drawingPath === "string" ? body.drawingPath : undefined;
-  const drawingText =
-    typeof body?.drawingText === "string" ? body.drawingText : undefined;
-  const hasResponseJsonField = Object.prototype.hasOwnProperty.call(
-    body || {},
-    "responseJson"
-  );
-  const responseJsonInput = (body || {}).responseJson;
+  const responseText = body?.response as string | undefined;
+  const responseType = body?.responseType as string | undefined;
+  const drawingPath = typeof body?.drawingPath === "string" ? body.drawingPath : undefined;
+  const drawingText = typeof body?.drawingText === "string" ? body.drawingText : undefined;
   const drawingSnapshotValue = body?.drawingSnapshot;
   const drawingSnapshot =
     drawingSnapshotValue === null
@@ -213,90 +187,9 @@ export async function POST(req: Request) {
       ? JSON.stringify(drawingSnapshotValue)
       : undefined;
 
-  if (!sessionId || !slideId) {
-    return new Response("Missing sessionId or slideId", { status: 400 });
+  if (!sessionId || !slideId || typeof responseText !== "string") {
+    return new Response("Missing sessionId, slideId, or response", { status: 400 });
   }
-
-  const [slide, existingResponse, existingState] = await Promise.all([
-    prisma.lessonSlide.findUnique({
-      where: { id: slideId },
-      select: {
-        id: true,
-        prompt: true,
-        responseType: true,
-        responseConfig: true,
-      },
-    }),
-    prisma.lessonResponse.findUnique({
-      where: {
-        sessionId_slideId_userId: {
-          sessionId,
-          slideId,
-          userId: session.user.id,
-        },
-      },
-    }),
-    prisma.lessonStudentSlideState
-      .findUnique({
-        where: {
-          sessionId_slideId_userId: {
-            sessionId,
-            slideId,
-            userId: session.user.id,
-          },
-        },
-      })
-      .catch((err) => {
-        if (isMissingTableError(err)) return null;
-        throw err;
-      }),
-  ]);
-
-  if (!slide) {
-    return new Response("Slide not found", { status: 404 });
-  }
-
-  const slideResponseConfig = normalizeLessonResponseConfig(
-    slide.responseConfig ? JSON.parse(slide.responseConfig) : {},
-    {
-      responseType: slide.responseType || "text",
-      prompt: slide.prompt || "",
-    }
-  );
-
-  const resolvedResponseJson = hasResponseJsonField
-    ? responseJsonInput === null
-      ? null
-      : normalizeLessonResponseJson(responseJsonInput)
-    : parseLessonResponseJson(
-        existingState?.responseJson ?? existingResponse?.responseJson ?? null
-      );
-  const responseJsonString = stringifyLessonResponseJson(resolvedResponseJson);
-
-  const effectiveDrawingPath =
-    typeof drawingPath === "string"
-      ? drawingPath
-      : existingState?.drawingPath || existingResponse?.drawingPath || "";
-  const effectiveDrawingText =
-    typeof drawingText === "string"
-      ? drawingText
-      : existingState?.drawingText || "";
-  const fallbackResponse =
-    responseTextInput ??
-    existingState?.responseText ??
-    existingResponse?.response ??
-    "";
-
-  const derivedResponse = summarizeLessonResponseJson({
-    blocks: slideResponseConfig.blocks,
-    responseJson: resolvedResponseJson,
-    fallbackText: fallbackResponse,
-    drawingPath: effectiveDrawingPath,
-    drawingText: effectiveDrawingText,
-  });
-
-  const responseText = derivedResponse || fallbackResponse || "";
-  const responseType = responseTypeInput || existingResponse?.responseType || "text";
 
   await prisma.lessonResponse.upsert({
     where: {
@@ -308,8 +201,7 @@ export async function POST(req: Request) {
     },
     update: {
       response: responseText,
-      responseJson: responseJsonString,
-      responseType,
+      responseType: responseType || "text",
       ...(typeof drawingPath === "string" ? { drawingPath } : {}),
     },
     create: {
@@ -317,41 +209,21 @@ export async function POST(req: Request) {
       slideId,
       userId: session.user.id,
       response: responseText,
-      responseJson: responseJsonString,
-      responseType,
+      responseType: responseType || "text",
       drawingPath,
     },
   });
 
-  const stateUpdate: {
-    responseText: string;
-    responseJson: string | null;
-    drawingPath?: string;
-    drawingText?: string;
-    drawingSnapshot?: string | null;
-  } = {
-    responseText,
-    responseJson: responseJsonString,
-  };
+  const stateUpdate: Record<string, unknown> = { responseText };
   if (typeof drawingPath === "string") stateUpdate.drawingPath = drawingPath;
   if (typeof drawingText === "string") stateUpdate.drawingText = drawingText;
   if (drawingSnapshot !== undefined) stateUpdate.drawingSnapshot = drawingSnapshot;
 
-  const stateCreate: {
-    sessionId: string;
-    slideId: string;
-    userId: string;
-    responseText: string;
-    responseJson: string | null;
-    drawingPath?: string;
-    drawingText?: string;
-    drawingSnapshot?: string | null;
-  } = {
+  const stateCreate: Record<string, unknown> = {
     sessionId,
     slideId,
     userId: session.user.id,
     responseText,
-    responseJson: responseJsonString,
   };
   if (typeof drawingPath === "string") stateCreate.drawingPath = drawingPath;
   if (typeof drawingText === "string") stateCreate.drawingText = drawingText;
@@ -380,9 +252,5 @@ export async function POST(req: Request) {
   }
 
   emitRealtime("lesson:update", { sessionId, source: "lesson-response" });
-  return Response.json({
-    ok: true,
-    response: responseText,
-    responseJson: resolvedResponseJson,
-  });
+  return new Response("OK");
 }
