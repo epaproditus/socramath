@@ -6,6 +6,16 @@ import Link from "next/link";
 import RichTextEditor from "@/components/RichTextEditor";
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 import TeacherHeatmap from "@/components/TeacherHeatmap";
+import { FEATURE_FLAGS } from "@/lib/config";
+import {
+  LessonBlock,
+  createDrawingBlock,
+  createMcqBlock,
+  createPromptBlock,
+  createTextBlock,
+  normalizeLessonResponseConfig,
+  splitChoiceText,
+} from "@/lib/lesson-blocks";
 
 type Slide = { id: string; index: number };
 type LessonSessionPayload = {
@@ -21,8 +31,11 @@ type SlideDetail = {
   prompt: string;
   rubric: string[];
   responseType: string;
-  responseConfig: Record<string, any>;
+  responseConfig: Record<string, unknown>;
 };
+
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
 
 export default function LessonSessionDashboard() {
   const [data, setData] = useState<LessonSessionPayload | null>(null);
@@ -65,8 +78,8 @@ export default function LessonSessionDashboard() {
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
       setData(json);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load lesson session");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to load lesson session"));
     }
   };
 
@@ -95,8 +108,16 @@ export default function LessonSessionDashboard() {
         return;
       }
       const json = await res.json();
+      const normalizedResponseConfig = normalizeLessonResponseConfig(
+        json.responseConfig || {},
+        {
+          responseType: json.responseType || "text",
+          prompt: json.prompt || "",
+        }
+      );
       setSlideDetail({
         ...json,
+        responseConfig: normalizedResponseConfig,
       });
       const rubricHtml = Array.isArray(json.rubric) ? json.rubric.join("\n") : "";
       lastSavedRef.current = JSON.stringify({
@@ -104,7 +125,7 @@ export default function LessonSessionDashboard() {
         prompt: json.prompt || "",
         rubric: rubricHtml,
         responseType: json.responseType || "text",
-        responseConfig: json.responseConfig || {},
+        responseConfig: normalizedResponseConfig,
       });
       hydratedRef.current = true;
     };
@@ -191,8 +212,8 @@ export default function LessonSessionDashboard() {
       if (!res.ok) throw new Error(await res.text());
       const created = await res.json();
       await updateSession({ currentSlideIndex: created.index });
-    } catch (err: any) {
-      setError(err?.message || "Failed to create slide");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to create slide"));
     } finally {
       setCreatingSlide(false);
     }
@@ -261,6 +282,87 @@ export default function LessonSessionDashboard() {
     } finally {
       setOcrRunning(false);
     }
+  };
+
+  const blocks = useMemo(() => {
+    if (!slideDetail) return [] as LessonBlock[];
+    return normalizeLessonResponseConfig(slideDetail.responseConfig, {
+      responseType: slideDetail.responseType,
+      prompt: slideDetail.prompt,
+    }).blocks;
+  }, [slideDetail]);
+
+  const updateBlocks = (updater: (current: LessonBlock[]) => LessonBlock[]) => {
+    if (!slideDetail) return;
+    const normalizedConfig = normalizeLessonResponseConfig(slideDetail.responseConfig, {
+      responseType: slideDetail.responseType,
+      prompt: slideDetail.prompt,
+    });
+    const nextBlocks = updater(normalizedConfig.blocks);
+    const nextConfig = normalizeLessonResponseConfig(
+      {
+        ...normalizedConfig,
+        blocks: nextBlocks,
+      },
+      {
+        responseType: slideDetail.responseType,
+        prompt: slideDetail.prompt,
+      }
+    );
+    setSlideDetail({
+      ...slideDetail,
+      responseConfig: nextConfig,
+    });
+    scheduleAutosave();
+  };
+
+  const addBlock = (type: LessonBlock["type"]) => {
+    if (!slideDetail) return;
+    const nextIndex = blocks.filter((block) => block.type === type).length + 1;
+    if (type === "prompt") {
+      updateBlocks((current) => [
+        ...current,
+        createPromptBlock("Add guidance for this slide.", "Prompt", `prompt_${nextIndex}`),
+      ]);
+      return;
+    }
+    if (type === "text") {
+      updateBlocks((current) => [
+        ...current,
+        createTextBlock("Your response", {
+          id: `text_${nextIndex}`,
+          required: true,
+        }),
+      ]);
+      return;
+    }
+    if (type === "mcq") {
+      updateBlocks((current) => [
+        ...current,
+        createMcqBlock("Choose your answer", ["Option A", "Option B"], {
+          id: `mcq_${nextIndex}`,
+          required: true,
+          multi: false,
+          requireExplain: false,
+        }),
+      ]);
+      return;
+    }
+    updateBlocks((current) => [
+      ...current,
+      createDrawingBlock("Show your work", { id: `drawing_${nextIndex}`, required: false }),
+    ]);
+  };
+
+  const moveBlock = (index: number, direction: -1 | 1) => {
+    updateBlocks((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      const [moved] = next.splice(index, 1);
+      next.splice(nextIndex, 0, moved);
+      return next;
+    });
   };
 
   return (
@@ -450,12 +552,267 @@ export default function LessonSessionDashboard() {
                     value={(slideDetail.rubric || []).join("\n") || ""}
                     placeholder="e.g. Uses a^2 + b^2 = c^2"
                     onChange={(value) => {
-                      const rubric = value.trim() ? [value] : [];
+                      const rubric = value
+                        .split(/\r?\n/)
+                        .map((item) => item.trim())
+                        .filter(Boolean);
                       setSlideDetail({ ...slideDetail, rubric });
                       scheduleAutosave();
                     }}
                   />
                 </div>
+                {FEATURE_FLAGS.lessonBlockEditor && (
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                    <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+                      Block Editor
+                    </div>
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addBlock("prompt")}
+                        className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100"
+                      >
+                        + Prompt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addBlock("text")}
+                        className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100"
+                      >
+                        + Text
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addBlock("mcq")}
+                        className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100"
+                      >
+                        + MCQ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addBlock("drawing")}
+                        className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100"
+                      >
+                        + Drawing
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      {blocks.map((block, blockIndex) => (
+                        <div
+                          key={`${block.id}-${blockIndex}`}
+                          className="rounded-lg border border-zinc-200 bg-white p-2"
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                              {block.type} • {block.id}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveBlock(blockIndex, -1)}
+                                className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px]"
+                                disabled={blockIndex === 0}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveBlock(blockIndex, 1)}
+                                className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px]"
+                                disabled={blockIndex === blocks.length - 1}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateBlocks((current) =>
+                                    current.filter((_, idx) => idx !== blockIndex)
+                                  )
+                                }
+                                className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] text-red-700"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {block.type === "prompt" && (
+                            <div className="space-y-2">
+                              <input
+                                value={block.title || ""}
+                                onChange={(e) =>
+                                  updateBlocks((current) =>
+                                    current.map((item, idx) =>
+                                      idx === blockIndex
+                                        ? { ...item, title: e.target.value }
+                                        : item
+                                    )
+                                  )
+                                }
+                                className="w-full rounded border border-zinc-200 px-2 py-1 text-xs"
+                                placeholder="Title"
+                              />
+                              <textarea
+                                value={block.content || ""}
+                                onChange={(e) =>
+                                  updateBlocks((current) =>
+                                    current.map((item, idx) =>
+                                      idx === blockIndex
+                                        ? { ...item, content: e.target.value }
+                                        : item
+                                    )
+                                  )
+                                }
+                                className="h-20 w-full rounded border border-zinc-200 px-2 py-1 text-xs"
+                                placeholder="Prompt content"
+                              />
+                            </div>
+                          )}
+
+                          {(block.type === "text" || block.type === "drawing") && (
+                            <div className="space-y-2">
+                              <input
+                                value={block.label || ""}
+                                onChange={(e) =>
+                                  updateBlocks((current) =>
+                                    current.map((item, idx) =>
+                                      idx === blockIndex
+                                        ? { ...item, label: e.target.value }
+                                        : item
+                                    )
+                                  )
+                                }
+                                className="w-full rounded border border-zinc-200 px-2 py-1 text-xs"
+                                placeholder="Label"
+                              />
+                              {block.type === "text" && (
+                                <input
+                                  value={block.placeholder || ""}
+                                  onChange={(e) =>
+                                    updateBlocks((current) =>
+                                      current.map((item, idx) =>
+                                        idx === blockIndex
+                                          ? { ...item, placeholder: e.target.value }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="w-full rounded border border-zinc-200 px-2 py-1 text-xs"
+                                  placeholder="Placeholder"
+                                />
+                              )}
+                              <label className="flex items-center gap-2 text-xs text-zinc-600">
+                                <input
+                                  type="checkbox"
+                                  checked={block.required !== false}
+                                  onChange={(e) =>
+                                    updateBlocks((current) =>
+                                      current.map((item, idx) =>
+                                        idx === blockIndex
+                                          ? { ...item, required: e.target.checked }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                />
+                                Required
+                              </label>
+                            </div>
+                          )}
+
+                          {block.type === "mcq" && (
+                            <div className="space-y-2">
+                              <input
+                                value={block.label || ""}
+                                onChange={(e) =>
+                                  updateBlocks((current) =>
+                                    current.map((item, idx) =>
+                                      idx === blockIndex
+                                        ? { ...item, label: e.target.value }
+                                        : item
+                                    )
+                                  )
+                                }
+                                className="w-full rounded border border-zinc-200 px-2 py-1 text-xs"
+                                placeholder="Question label"
+                              />
+                              <textarea
+                                value={(block.choices || []).join("\n")}
+                                onChange={(e) =>
+                                  updateBlocks((current) =>
+                                    current.map((item, idx) =>
+                                      idx === blockIndex
+                                        ? { ...item, choices: splitChoiceText(e.target.value) }
+                                        : item
+                                    )
+                                  )
+                                }
+                                className="h-20 w-full rounded border border-zinc-200 px-2 py-1 text-xs"
+                                placeholder="One choice per line"
+                              />
+                              <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-600">
+                                <label className="flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!block.multi}
+                                    onChange={(e) =>
+                                      updateBlocks((current) =>
+                                        current.map((item, idx) =>
+                                          idx === blockIndex
+                                            ? { ...item, multi: e.target.checked }
+                                            : item
+                                        )
+                                      )
+                                    }
+                                  />
+                                  Multi-select
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!block.requireExplain}
+                                    onChange={(e) =>
+                                      updateBlocks((current) =>
+                                        current.map((item, idx) =>
+                                          idx === blockIndex
+                                            ? { ...item, requireExplain: e.target.checked }
+                                            : item
+                                        )
+                                      )
+                                    }
+                                  />
+                                  Require explanation
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={block.required !== false}
+                                    onChange={(e) =>
+                                      updateBlocks((current) =>
+                                        current.map((item, idx) =>
+                                          idx === blockIndex
+                                            ? { ...item, required: e.target.checked }
+                                            : item
+                                        )
+                                      )
+                                    }
+                                  />
+                                  Required
+                                </label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {!blocks.length && (
+                        <div className="rounded border border-dashed border-zinc-200 p-2 text-xs text-zinc-500">
+                          No blocks yet. Add one above.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>{slideSaving ? "Saving..." : slideMessage || "Autosave on edit"}</span>
                   <button
