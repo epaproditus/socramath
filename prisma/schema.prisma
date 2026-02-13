@@ -234,6 +234,7 @@ model LessonResponse {
   slideId      String
   userId       String
   response     String
+  responseJson String?
   responseType String? // "text" | "drawing" | "both"
   drawingPath  String?
   createdAt    DateTime @default(now())
@@ -252,6 +253,7 @@ model LessonStudentSlideState {
   slideId         String
   userId          String
   responseText    String   @default("")
+  responseJson    String?
   drawingPath     String?
   drawingText     String?
   drawingSnapshot String?
