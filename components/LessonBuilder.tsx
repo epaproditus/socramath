@@ -227,7 +227,9 @@ export default function LessonBuilder() {
           <div className="mb-4">
             <h2 className="text-lg font-semibold">Import Unified Lesson From CSV</h2>
             <p className="text-sm text-zinc-500">
-              Each CSV row becomes a slide with predefined blocks for prompt, response, and drawing.
+              Supports both question-row CSVs and legacy DMAC student exports with numbered
+              question columns (e.g. 1, 2.1, 2.2). We build teacher-paced question slides from
+              structure only, no source graphics required.
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-[1fr_auto]">

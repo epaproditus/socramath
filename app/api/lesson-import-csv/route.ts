@@ -17,6 +17,19 @@ type QuestionRow = {
   order: number;
 };
 
+type StudentQuestionColumn = {
+  column: string;
+  text: string;
+  orderIndex: number;
+};
+
+type StudentQuestionGroup = {
+  key: string;
+  text: string;
+  orderIndex: number;
+  columns: StudentQuestionColumn[];
+};
+
 type CsvParseResult = {
   data: CsvRow[];
   meta: { fields?: string[] };
@@ -67,6 +80,106 @@ const parseBooleanField = (
   if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
   return defaultValue;
+};
+
+const KNOWN_METADATA_VALUES = new Set([
+  "singleresponse",
+  "inlinetext",
+  "inlinechoice",
+  "multiplechoice",
+  "multiresponse",
+  "openresponse",
+  "essay",
+  "numeric",
+  "graphing",
+  "equation",
+  "dragdrop",
+]);
+
+const NON_QUESTION_HEADERS = new Set([
+  "lastname",
+  "firstname",
+  "localid",
+  "studentid",
+  "email",
+  "passed",
+  "score",
+  "points",
+  "percent",
+  "grade",
+  "total",
+]);
+
+const parseOrderIndexFromHeader = (header: string) => {
+  const match = header.trim().match(/\d+(\.\d+)?/);
+  if (!match) return null;
+  const num = Number(match[0]);
+  if (!Number.isFinite(num)) return null;
+  return Math.round(num * 100);
+};
+
+const normalizeQuestionText = (header: string) => {
+  const trimmed = header.trim();
+  if (!trimmed) return "Question";
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return `Question ${trimmed}`;
+  }
+  return trimmed;
+};
+
+const isLikelyQuestionHeader = (header: string) => {
+  const trimmed = header.trim();
+  if (!trimmed) return false;
+  if (NON_QUESTION_HEADERS.has(trimmed.toLowerCase().replace(/\s+/g, ""))) return false;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return true;
+  if (/^q\d+(\.\d+)?$/i.test(trimmed)) return true;
+  if (/^question\s*\d+/i.test(trimmed)) return true;
+  return false;
+};
+
+const baseQuestionKey = (header: string) => {
+  const trimmed = header.trim();
+  const match = trimmed.match(/^(\d+)\.(\d+)$/);
+  if (match) return match[1];
+  return trimmed;
+};
+
+const isLikelyMetadataRow = (row: CsvRow, questionColumns: string[]) => {
+  if (!row || !questionColumns.length) return false;
+  let matches = 0;
+  let total = 0;
+  for (const column of questionColumns) {
+    const raw = String(row[column] || "").trim().toLowerCase();
+    if (!raw) continue;
+    total += 1;
+    if (KNOWN_METADATA_VALUES.has(raw)) matches += 1;
+  }
+  return total > 0 && matches / total >= 0.6;
+};
+
+const buildStudentQuestionGroups = (columns: StudentQuestionColumn[]) => {
+  const groups = new Map<string, StudentQuestionGroup>();
+
+  columns.forEach((column, idx) => {
+    const key = baseQuestionKey(column.column);
+    const existing = groups.get(key);
+    const orderIndex =
+      typeof column.orderIndex === "number"
+        ? column.orderIndex
+        : parseOrderIndexFromHeader(column.column) ?? idx;
+    if (existing) {
+      existing.columns.push(column);
+      return;
+    }
+    groups.set(key, {
+      key,
+      text: column.text || normalizeQuestionText(key),
+      orderIndex,
+      columns: [column],
+    });
+  });
+
+  return Array.from(groups.values()).sort((a, b) => a.orderIndex - b.orderIndex);
 };
 
 const readChoices = (row: CsvRow, headers: string[], explicitChoiceHeader: string | null) => {
@@ -151,33 +264,103 @@ export async function POST(req: Request) {
     return new Response("CSV is empty", { status: 400 });
   }
 
-  const promptHeader =
-    findHeader(headers, ["prompt", "question", "question_text", "text", "item", "stem"]) ||
-    headers[0];
+  const promptHeader = findHeader(headers, [
+    "prompt",
+    "question",
+    "question_text",
+    "text",
+    "item",
+    "stem",
+  ]);
   const rubricHeader = findHeader(headers, ["rubric", "criteria", "success_criteria"]);
   const choicesHeader = findHeader(headers, ["choices", "options", "answers", "answer_choices"]);
   const multiHeader = findHeader(headers, ["multi", "multiple", "is_multi", "multi_select"]);
   const orderHeader = findHeader(headers, ["order", "order_index", "index", "question_number"]);
 
-  const questionRows: QuestionRow[] = rows
-    .map((row: CsvRow, idx: number) => {
-      const prompt = normalizeText(String(row[promptHeader] || ""));
-      if (!prompt) return null;
-      const rubric = rubricHeader ? parseRubric(String(row[rubricHeader] || "")) : [];
-      const choices = readChoices(row, headers, choicesHeader);
-      const multi = multiHeader ? parseBool(String(row[multiHeader] || "")) : false;
-      const orderRaw = orderHeader ? Number(String(row[orderHeader] || "").trim()) : Number.NaN;
-      const order = Number.isFinite(orderRaw) ? orderRaw : idx + 1;
+  const questionLikeHeaders = headers.filter((header) => isLikelyQuestionHeader(header));
+  const hasStudentIdentifierHeaders = !!(
+    findHeader(headers, ["FirstName", "First Name", "GivenName"]) ||
+    findHeader(headers, ["LastName", "Last Name", "Surname", "FamilyName"]) ||
+    findHeader(headers, ["LocalID", "Local Id", "StudentID", "Student Id"]) ||
+    findHeader(headers, ["Email", "EmailAddress"])
+  );
+  const useStudentRowsMode =
+    questionLikeHeaders.length >= 5 &&
+    (hasStudentIdentifierHeaders || !promptHeader);
 
-      return { prompt, rubric, choices, multi, order };
-    })
-    .filter((row: QuestionRow | null): row is QuestionRow => !!row)
-    .sort((a: QuestionRow, b: QuestionRow) => a.order - b.order);
+  let importMode: "question_rows" | "student_rows" = "question_rows";
+  let usedMetadataRow = false;
+  let questionRows: QuestionRow[] = [];
+
+  if (!useStudentRowsMode && promptHeader) {
+    importMode = "question_rows";
+    questionRows = rows
+      .map((row: CsvRow, idx: number) => {
+        const prompt = normalizeText(String(row[promptHeader] || ""));
+        if (!prompt) return null;
+        const rubric = rubricHeader ? parseRubric(String(row[rubricHeader] || "")) : [];
+        const choices = readChoices(row, headers, choicesHeader);
+        const multi = multiHeader ? parseBool(String(row[multiHeader] || "")) : false;
+        const orderRaw = orderHeader ? Number(String(row[orderHeader] || "").trim()) : Number.NaN;
+        const order = Number.isFinite(orderRaw) ? orderRaw : idx + 1;
+
+        return { prompt, rubric, choices, multi, order };
+      })
+      .filter((row: QuestionRow | null): row is QuestionRow => !!row)
+      .sort((a: QuestionRow, b: QuestionRow) => a.order - b.order);
+  } else {
+    importMode = "student_rows";
+    const questionColumns: StudentQuestionColumn[] = questionLikeHeaders.map(
+      (header, idx) => ({
+        column: header,
+        text: normalizeQuestionText(baseQuestionKey(header)),
+        orderIndex: parseOrderIndexFromHeader(header) ?? idx + 1,
+      })
+    );
+    if (!questionColumns.length) {
+      return new Response(
+        "Could not detect question columns. Add a prompt column or numbered question headers.",
+        { status: 400 }
+      );
+    }
+
+    const firstRow = rows[0] || null;
+    const questionColumnNames = questionColumns.map((column) => column.column);
+    const metadataRow =
+      firstRow && isLikelyMetadataRow(firstRow, questionColumnNames) ? firstRow : null;
+    usedMetadataRow = !!metadataRow;
+
+    const groups = buildStudentQuestionGroups(questionColumns);
+    questionRows = groups.map((group, idx) => {
+      const metadataValues = metadataRow
+        ? Array.from(
+            new Set(
+              group.columns
+                .map((column) => normalizeText(String(metadataRow[column.column] || "")))
+                .filter(Boolean)
+            )
+          )
+        : [];
+
+      return {
+        prompt: group.text,
+        rubric: metadataValues.length
+          ? [`Question type: ${metadataValues.join(" / ")}`]
+          : [],
+        choices: [],
+        multi: false,
+        order: Number.isFinite(group.orderIndex) ? group.orderIndex : idx + 1,
+      };
+    });
+  }
 
   if (!questionRows.length) {
-    return new Response("Could not detect question rows. Include a prompt/question column.", {
-      status: 400,
-    });
+    return new Response(
+      "Could not detect question rows. Use a prompt/question column or DMAC-style numbered question headers.",
+      {
+        status: 400,
+      }
+    );
   }
 
   const titleValue = form.get("title");
@@ -296,6 +479,8 @@ export async function POST(req: Request) {
     isActive: lesson.isActive,
     createdAt: lesson.createdAt,
     source: "csv",
+    importMode,
+    metadataRowUsed: usedMetadataRow,
     importedSlides: questionRows.length,
     parseWarnings: parsed.errors || [],
   });

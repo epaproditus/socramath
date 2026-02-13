@@ -28,6 +28,11 @@ type LessonSceneData = {
   meta?: { width: number; height: number };
 };
 
+type DrawingSceneEntry = {
+  snapshot?: Record<string, unknown>;
+  meta?: { width: number; height: number };
+};
+
 type LessonState = {
   lesson: {
     id: string;
@@ -91,6 +96,17 @@ const assessmentBoxClass = (label?: AssessmentLabel | null) => {
   return "border-zinc-200 bg-zinc-50 text-zinc-600";
 };
 
+const toJsonSnippet = (value: unknown, maxChars = 1200) => {
+  try {
+    const json = JSON.stringify(value);
+    if (!json) return "None.";
+    if (json.length <= maxChars) return json;
+    return `${json.slice(0, maxChars)}... (truncated)`;
+  } catch {
+    return "None.";
+  }
+};
+
 export default function Home() {
   const {
     currentSession,
@@ -123,7 +139,7 @@ export default function Home() {
   >({});
   const [lessonDrawingPathBySlide, setLessonDrawingPathBySlide] = useState<Record<string, string>>({});
   const [lessonDrawingSceneBySlide, setLessonDrawingSceneBySlide] = useState<
-    Record<string, { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } }>
+    Record<string, DrawingSceneEntry>
   >({});
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [formulaSheetUrl, setFormulaSheetUrl] = useState<string | null>(null);
@@ -164,7 +180,7 @@ export default function Home() {
     lessonDrawingPathRef.current = lessonDrawingPathBySlide;
   }, [lessonDrawingPathBySlide]);
   const lessonDrawingSceneRef = useRef<
-    Record<string, { snapshot?: Record<string, unknown>; meta?: { width: number; height: number } }>
+    Record<string, DrawingSceneEntry>
   >({});
   useEffect(() => {
     lessonDrawingSceneRef.current = lessonDrawingSceneBySlide;
@@ -837,6 +853,7 @@ export default function Home() {
       const lessonState = lessonStateRef.current;
       const isLesson = activeExperienceRef.current === "lesson" && !!lessonState;
       const drawingTextMap = lessonDrawingTextRef.current || {};
+      const drawingSceneMap = lessonDrawingSceneRef.current || {};
       const responseTextMap = lessonResponseTextRef.current || {};
       const responseJsonMap = lessonResponseJsonRef.current || {};
       const currentSlideResponseText =
@@ -847,6 +864,10 @@ export default function Home() {
         lessonState?.currentSlideId && responseJsonMap[lessonState.currentSlideId]
           ? responseJsonMap[lessonState.currentSlideId]
           : lessonState?.slideResponseJson || null;
+      const currentSlideDrawingScene =
+        lessonState?.currentSlideId && drawingSceneMap[lessonState.currentSlideId]
+          ? drawingSceneMap[lessonState.currentSlideId]
+          : null;
       const drawingTextSummary = (() => {
         if (!lessonState?.slides?.length) return "";
         const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
@@ -858,6 +879,23 @@ export default function Home() {
             const idx = byIndex.get(id) || "?";
             const cleaned = text.replace(/\s+/g, " ").trim();
             return `Slide ${idx}: ${cleaned.slice(0, 200)}`;
+          });
+        return entries.length ? entries.join("\n") : "None.";
+      })();
+      const drawingSceneSummary = (() => {
+        if (!lessonState?.slides?.length) return "";
+        const byIndex = new Map(lessonState.slides.map((s) => [s.id, s.index]));
+        const entries = Object.entries(drawingSceneMap)
+          .filter(([, scene]) => !!scene?.snapshot && Object.keys(scene.snapshot || {}).length > 0)
+          .sort((a, b) => (byIndex.get(a[0]) || 0) - (byIndex.get(b[0]) || 0))
+          .slice(0, 8)
+          .map(([id, scene]) => {
+            const idx = byIndex.get(id) || "?";
+            const snapshotSummary = toJsonSnippet(scene.snapshot, 420);
+            const metaSummary = scene.meta
+              ? ` (canvas ${scene.meta.width}x${scene.meta.height})`
+              : "";
+            return `Slide ${idx}${metaSummary}: ${snapshotSummary}`;
           });
         return entries.length ? entries.join("\n") : "None.";
       })();
@@ -936,9 +974,15 @@ export default function Home() {
             ${lessonState?.currentSlideId && drawingTextMap[lessonState.currentSlideId]
               ? drawingTextMap[lessonState.currentSlideId].slice(0, 800)
               : "None."}
+            STUDENT DRAWING SCENE JSON (current slide from tldraw):
+            ${currentSlideDrawingScene?.snapshot
+              ? toJsonSnippet(currentSlideDrawingScene.snapshot, 1400)
+              : "None."}
 
             STUDENT DRAWING TEXT (other slides):
             ${drawingTextSummary}
+            STUDENT DRAWING SCENE JSON (other slides):
+            ${drawingSceneSummary}
 
             INSTRUCTIONS:
             - Ask 1 focused, open-ended question at a time.
@@ -948,6 +992,7 @@ export default function Home() {
             - If the student asks what slide they are on, answer exactly: "You're on slide ${lessonState?.currentSlideIndex || 1}."
             - You are given student typed responses. Use them when present.
             - You are given student annotation text in STUDENT DRAWING TEXT. Use it when present.
+            - You are given drawing structure in STUDENT DRAWING SCENE JSON. Use it to reason about sketches/graphs.
             - Never claim you cannot see what the student typed if STUDENT TYPED RESPONSE is not "None.".
 
             GLOBAL TEACHER PROMPT:
