@@ -1,4 +1,5 @@
 export type LessonBlockType = "prompt" | "text" | "mcq" | "drawing";
+export type LessonBlockRevealMode = "all" | "teacher";
 
 type LessonBlockBase = {
   id: string;
@@ -48,6 +49,8 @@ export type LessonResponseConfigV1 = {
   blocks: LessonBlock[];
   sceneData?: Record<string, unknown>;
   widgets?: string[];
+  blockRevealMode?: LessonBlockRevealMode;
+  defaultVisibleBlockIds?: string[];
   [key: string]: unknown;
 };
 
@@ -280,6 +283,17 @@ export const normalizeLessonResponseConfig = (
       .filter(Boolean);
   }
 
+  const revealMode = asString(source.blockRevealMode).toLowerCase();
+  if (revealMode === "teacher" || revealMode === "all") {
+    normalized.blockRevealMode = revealMode as LessonBlockRevealMode;
+  }
+  if (Array.isArray(source.defaultVisibleBlockIds)) {
+    const validIds = new Set(blocks.map((block) => block.id));
+    normalized.defaultVisibleBlockIds = source.defaultVisibleBlockIds
+      .map((id) => asString(id).trim())
+      .filter((id) => !!id && validIds.has(id));
+  }
+
   return normalized;
 };
 
@@ -301,6 +315,9 @@ export const defaultCsvResponseConfig = (args: {
   prompt: string;
   choices?: string[];
   multi?: boolean;
+  includeDrawing?: boolean;
+  blockRevealMode?: LessonBlockRevealMode;
+  startPromptOnly?: boolean;
 }): LessonResponseConfigV1 => {
   const blocks: LessonBlock[] = [createPromptBlock(args.prompt || "", "Prompt", "prompt_1")];
 
@@ -324,11 +341,29 @@ export const defaultCsvResponseConfig = (args: {
     );
   }
 
-  blocks.push(createDrawingBlock("Show your work", { id: "drawing_1", required: false }));
+  if (args.includeDrawing !== false) {
+    blocks.push(createDrawingBlock("Show your work", { id: "drawing_1", required: false }));
+  }
+
+  const blockRevealMode = args.blockRevealMode === "teacher" ? "teacher" : "all";
+  const defaultVisibleBlockIds =
+    blockRevealMode === "teacher"
+      ? args.startPromptOnly === false
+        ? blocks.map((block) => block.id)
+        : blocks.filter((block) => block.type === "prompt").map((block) => block.id)
+      : undefined;
 
   return {
     version: 1,
     blocks,
-    widgets: choices.length ? ["choice", "drawing"] : ["text", "drawing"],
+    widgets: choices.length
+      ? args.includeDrawing === false
+        ? ["choice"]
+        : ["choice", "drawing"]
+      : args.includeDrawing === false
+      ? ["text"]
+      : ["text", "drawing"],
+    blockRevealMode,
+    defaultVisibleBlockIds,
   };
 };

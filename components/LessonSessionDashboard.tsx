@@ -7,6 +7,7 @@ import RichTextEditor from "@/components/RichTextEditor";
 import LessonExcalidrawOverlay from "@/components/LessonExcalidrawOverlay";
 import TeacherHeatmap from "@/components/TeacherHeatmap";
 import { FEATURE_FLAGS } from "@/lib/config";
+import { LessonPaceConfig, resolveVisibleLessonBlocks } from "@/lib/lesson-pace";
 import {
   LessonBlock,
   createDrawingBlock,
@@ -20,7 +21,16 @@ import {
 type Slide = { id: string; index: number };
 type LessonSessionPayload = {
   lesson: { id: string; title: string; pdfPath?: string | null; pageCount: number };
-  session: { id: string; mode: "instructor" | "student"; currentSlideIndex: number };
+  session: {
+    id: string;
+    mode: "instructor" | "student";
+    currentSlideIndex: number;
+    isFrozen?: boolean;
+    paceConfig?: LessonPaceConfig | null;
+    timerEndsAt?: string | null;
+    timerRemainingSec?: number | null;
+    timerRunning?: boolean;
+  };
   slides: Slide[];
 };
 
@@ -284,13 +294,40 @@ export default function LessonSessionDashboard() {
     }
   };
 
-  const blocks = useMemo(() => {
-    if (!slideDetail) return [] as LessonBlock[];
+  const normalizedSlideConfig = useMemo(() => {
+    if (!slideDetail) return null;
     return normalizeLessonResponseConfig(slideDetail.responseConfig, {
       responseType: slideDetail.responseType,
       prompt: slideDetail.prompt,
-    }).blocks;
+    });
   }, [slideDetail]);
+
+  const blocks = useMemo(() => {
+    return normalizedSlideConfig?.blocks || ([] as LessonBlock[]);
+  }, [normalizedSlideConfig]);
+
+  const visibleBlocksForStudents = useMemo(() => {
+    if (!slideDetail || !normalizedSlideConfig) return [] as LessonBlock[];
+    return resolveVisibleLessonBlocks({
+      blocks: normalizedSlideConfig.blocks,
+      slideId: slideDetail.id,
+      paceConfig: data?.session.paceConfig || null,
+      responseConfig: normalizedSlideConfig,
+    });
+  }, [data?.session.paceConfig, normalizedSlideConfig, slideDetail]);
+
+  const visibleBlockIds = useMemo(
+    () => new Set(visibleBlocksForStudents.map((block) => block.id)),
+    [visibleBlocksForStudents]
+  );
+
+  const hasVisibilityOverride = useMemo(() => {
+    if (!slideDetail) return false;
+    return Object.prototype.hasOwnProperty.call(
+      data?.session.paceConfig?.revealedBlockIdsBySlide || {},
+      slideDetail.id
+    );
+  }, [data?.session.paceConfig?.revealedBlockIdsBySlide, slideDetail]);
 
   const updateBlocks = (updater: (current: LessonBlock[]) => LessonBlock[]) => {
     if (!slideDetail) return;
@@ -363,6 +400,40 @@ export default function LessonSessionDashboard() {
       next.splice(nextIndex, 0, moved);
       return next;
     });
+  };
+
+  const saveVisibleBlockOverride = async (nextVisibleIds: string[]) => {
+    if (!data?.session.id || !slideDetail?.id) return;
+    const currentPace = data.session.paceConfig || {};
+    const nextMap = {
+      ...(currentPace.revealedBlockIdsBySlide || {}),
+      [slideDetail.id]: Array.from(
+        new Set(nextVisibleIds.map((id) => String(id || "").trim()).filter(Boolean))
+      ),
+    };
+    await updateSession({
+      paceConfig: {
+        ...currentPace,
+        revealedBlockIdsBySlide: nextMap,
+      },
+    });
+    setSlideMessage("Student visibility updated.");
+    setTimeout(() => setSlideMessage(null), 1200);
+  };
+
+  const clearVisibleBlockOverride = async () => {
+    if (!data?.session.id || !slideDetail?.id) return;
+    const currentPace = data.session.paceConfig || {};
+    const nextMap = { ...(currentPace.revealedBlockIdsBySlide || {}) };
+    delete nextMap[slideDetail.id];
+    await updateSession({
+      paceConfig: {
+        ...currentPace,
+        revealedBlockIdsBySlide: nextMap,
+      },
+    });
+    setSlideMessage("Student visibility reset to defaults.");
+    setTimeout(() => setSlideMessage(null), 1200);
   };
 
   return (
@@ -596,6 +667,48 @@ export default function LessonSessionDashboard() {
                         + Drawing
                       </button>
                     </div>
+                    <div className="mb-3 rounded-md border border-zinc-200 bg-white p-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                        Student Reveal Control
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void saveVisibleBlockOverride([]);
+                          }}
+                          className="rounded border border-zinc-200 px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100"
+                        >
+                          Prompt only
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void saveVisibleBlockOverride(
+                              blocks
+                                .filter((block) => block.type !== "prompt")
+                                .map((block) => block.id)
+                            );
+                          }}
+                          className="rounded border border-zinc-200 px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100"
+                        >
+                          Show all blocks
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void clearVisibleBlockOverride();
+                          }}
+                          disabled={!hasVisibilityOverride}
+                          className="rounded border border-zinc-200 px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                        >
+                          Reset default
+                        </button>
+                      </div>
+                      <div className="mt-2 text-[11px] text-zinc-500">
+                        {visibleBlocksForStudents.length}/{blocks.length} blocks currently visible to students.
+                      </div>
+                    </div>
                     <div className="space-y-3">
                       {blocks.map((block, blockIndex) => (
                         <div
@@ -636,6 +749,29 @@ export default function LessonSessionDashboard() {
                               </button>
                             </div>
                           </div>
+
+                          {block.type !== "prompt" && (
+                            <label className="mb-2 flex items-center gap-2 text-[11px] text-zinc-600">
+                              <input
+                                type="checkbox"
+                                checked={visibleBlockIds.has(block.id)}
+                                onChange={(e) => {
+                                  const nextVisible = new Set(
+                                    visibleBlocksForStudents
+                                      .filter((item) => item.type !== "prompt")
+                                      .map((item) => item.id)
+                                  );
+                                  if (e.target.checked) {
+                                    nextVisible.add(block.id);
+                                  } else {
+                                    nextVisible.delete(block.id);
+                                  }
+                                  void saveVisibleBlockOverride(Array.from(nextVisible));
+                                }}
+                              />
+                              Visible to students now
+                            </label>
+                          )}
 
                           {block.type === "prompt" && (
                             <div className="space-y-2">

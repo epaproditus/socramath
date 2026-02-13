@@ -26,6 +26,9 @@ export default function LessonBuilder() {
   const [csvTitle, setCsvTitle] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
+  const [csvIncludeDrawing, setCsvIncludeDrawing] = useState(true);
+  const [csvTeacherControlBlocks, setCsvTeacherControlBlocks] = useState(true);
+  const [csvStartPromptOnly, setCsvStartPromptOnly] = useState(true);
 
   const canUpload = useMemo(() => !!file && !importing, [file, importing]);
   const canUploadCsv = useMemo(
@@ -93,6 +96,9 @@ export default function LessonBuilder() {
       const form = new FormData();
       form.append("file", csvFile);
       if (csvTitle.trim()) form.append("title", csvTitle.trim());
+      form.append("includeDrawing", String(csvIncludeDrawing));
+      form.append("teacherControlBlocks", String(csvTeacherControlBlocks));
+      form.append("startPromptOnly", String(csvStartPromptOnly));
 
       const res = await fetch("/api/lesson-import-csv", {
         method: "POST",
@@ -244,6 +250,37 @@ export default function LessonBuilder() {
               {csvFile && (
                 <div className="text-xs text-zinc-500">Selected: {csvFile.name}</div>
               )}
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Block Options
+                </div>
+                <label className="flex items-center gap-2 text-sm text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={csvIncludeDrawing}
+                    onChange={(e) => setCsvIncludeDrawing(e.target.checked)}
+                  />
+                  Include drawing block (legacy-style work area)
+                </label>
+                <label className="mt-2 flex items-center gap-2 text-sm text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={csvTeacherControlBlocks}
+                    onChange={(e) => setCsvTeacherControlBlocks(e.target.checked)}
+                  />
+                  Teacher controls when blocks are revealed
+                </label>
+                {csvTeacherControlBlocks && (
+                  <label className="mt-2 flex items-center gap-2 pl-5 text-sm text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={csvStartPromptOnly}
+                      onChange={(e) => setCsvStartPromptOnly(e.target.checked)}
+                    />
+                    Start with prompt-only (reveal response blocks later)
+                  </label>
+                )}
+              </div>
             </div>
             <div className="flex items-end">
               <button

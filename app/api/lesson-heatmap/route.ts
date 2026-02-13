@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
+import { parseLessonPaceConfig, resolveVisibleLessonBlocks } from "@/lib/lesson-pace";
 import {
   computeLessonSlideCompletion,
   parseLessonResponseJson,
@@ -45,6 +46,15 @@ type AssessmentRow = {
   updatedAt: string | number | Date;
 };
 
+const readStoredPaceConfig = (raw: string | null) => {
+  if (!raw) return null;
+  try {
+    return parseLessonPaceConfig(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
 export async function GET() {
   const session = await auth();
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -83,6 +93,7 @@ export async function GET() {
     },
   });
   const slides = slideRows.map((slide) => ({ id: slide.id, index: slide.index }));
+  const paceConfig = readStoredPaceConfig(lessonSession.paceConfig);
   const slideConfigById = new Map(
     slideRows.map((slide) => [
       slide.id,
@@ -214,7 +225,7 @@ export async function GET() {
       mode: lessonSession.mode,
       currentSlideIndex: lessonSession.currentSlideIndex,
       isFrozen: lessonSession.isFrozen,
-      paceConfig: lessonSession.paceConfig ? JSON.parse(lessonSession.paceConfig) : null,
+      paceConfig,
       timerEndsAt: lessonSession.timerEndsAt,
       timerRemainingSec: lessonSession.timerRemainingSec,
       timerRunning: lessonSession.timerRunning,
@@ -229,8 +240,15 @@ export async function GET() {
     responses: Array.from(cellMap.entries()).map(([key, value]) => ({
       ...(function () {
         const [userId, slideId] = key.split(":");
+        const slideConfig = slideConfigById.get(slideId) || null;
+        const visibleBlocks = resolveVisibleLessonBlocks({
+          blocks: slideConfig?.blocks || [],
+          slideId,
+          paceConfig,
+          responseConfig: slideConfig,
+        });
         const completion = computeLessonSlideCompletion({
-          blocks: slideConfigById.get(slideId)?.blocks || [],
+          blocks: visibleBlocks,
           responseJson: value.responseJson || null,
           drawingPath: value.drawingPath,
           drawingText: value.drawingText,

@@ -58,6 +58,17 @@ const parseBool = (raw: string) => {
   return false;
 };
 
+const parseBooleanField = (
+  value: FormDataEntryValue | null,
+  defaultValue: boolean
+) => {
+  if (typeof value !== "string") return defaultValue;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return defaultValue;
+};
+
 const readChoices = (row: CsvRow, headers: string[], explicitChoiceHeader: string | null) => {
   const optionHeaders = headers.filter((header) => /^(choice|option)\s*\d+$/i.test(header.trim()));
   const optionChoices = optionHeaders
@@ -170,6 +181,9 @@ export async function POST(req: Request) {
   }
 
   const titleValue = form.get("title");
+  const includeDrawing = parseBooleanField(form.get("includeDrawing"), true);
+  const teacherControlBlocks = parseBooleanField(form.get("teacherControlBlocks"), true);
+  const startPromptOnly = parseBooleanField(form.get("startPromptOnly"), true);
   const lessonTitle =
     typeof titleValue === "string" && titleValue.trim()
       ? titleValue.trim()
@@ -210,14 +224,17 @@ export async function POST(req: Request) {
           prompt: row.prompt,
           rubric: row.rubric.length ? JSON.stringify(row.rubric) : null,
           responseType: row.choices.length ? "both" : "text",
-          responseConfig: JSON.stringify(
-            defaultCsvResponseConfig({
-              prompt: row.prompt,
-              choices: row.choices,
-              multi: row.multi,
-            })
-          ),
-        },
+            responseConfig: JSON.stringify(
+              defaultCsvResponseConfig({
+                prompt: row.prompt,
+                choices: row.choices,
+                multi: row.multi,
+                includeDrawing,
+                blockRevealMode: teacherControlBlocks ? "teacher" : "all",
+                startPromptOnly,
+              })
+            ),
+          },
       });
     }
 

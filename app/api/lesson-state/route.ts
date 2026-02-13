@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { normalizeLessonResponseConfig } from "@/lib/lesson-blocks";
+import { parseLessonPaceConfig, resolveVisibleLessonBlocks } from "@/lib/lesson-pace";
 import {
   computeLessonSlideCompletion,
   parseLessonResponseJson,
@@ -57,6 +58,15 @@ const toIsoString = (value: string | number | Date | null | undefined) => {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 };
 
+const readStoredPaceConfig = (raw: string | null) => {
+  if (!raw) return null;
+  try {
+    return parseLessonPaceConfig(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
 
 export async function GET() {
   const session = await auth();
@@ -73,6 +83,7 @@ export async function GET() {
   if (!adminUser) {
     return new Response("Admin user not found", { status: 400 });
   }
+  const isAdminUser = !!session.user.email && session.user.email === adminEmail;
 
   const lesson = await prisma.lesson.findFirst({
     where: { userId: adminUser.id, isActive: true },
@@ -94,14 +105,7 @@ export async function GET() {
 
   let currentSlideIndex = lessonSession.currentSlideIndex;
   let isFrozen = lessonSession.isFrozen;
-  let paceConfig: { allowedSlides?: number[] } | null = null;
-  if (lessonSession.paceConfig) {
-    try {
-      paceConfig = JSON.parse(lessonSession.paceConfig);
-    } catch {
-      paceConfig = null;
-    }
-  }
+  const paceConfig = readStoredPaceConfig(lessonSession.paceConfig);
   let timerRunning = lessonSession.timerRunning;
   let timerEndsAt = lessonSession.timerEndsAt;
   let timerRemainingSec = lessonSession.timerRemainingSec;
@@ -261,8 +265,16 @@ export async function GET() {
   const slideResponseJson = parseLessonResponseJson(
     slideWork?.responseJson ?? lessonResponse?.responseJson ?? null
   );
+  const visibleSlideBlocks = isAdminUser
+    ? slideResponseConfig.blocks
+    : resolveVisibleLessonBlocks({
+        blocks: slideResponseConfig.blocks,
+        slideId: slide?.id || null,
+        paceConfig,
+        responseConfig: slideResponseConfig,
+      });
   const slideCompletion = computeLessonSlideCompletion({
-    blocks: slideResponseConfig.blocks,
+    blocks: visibleSlideBlocks,
     responseJson: slideResponseJson,
     drawingPath: slideWork?.drawingPath ?? lessonResponse?.drawingPath ?? "",
     drawingText: slideWork?.drawingText ?? "",
@@ -293,7 +305,7 @@ export async function GET() {
     slideRubric: slide?.rubric ? JSON.parse(slide.rubric) : [],
     slideResponseType: slide?.responseType || "text",
     slideResponseConfig,
-    slideBlocks: slideResponseConfig.blocks,
+    slideBlocks: visibleSlideBlocks,
     slideResponseJson,
     slideCompletion,
     slideAssessment: slideAssessment
@@ -349,14 +361,7 @@ export async function POST(req: Request) {
     return new Response("Session is frozen", { status: 423 });
   }
 
-  let paceConfig: { allowedSlides?: number[] } | null = null;
-  if (lessonSession.paceConfig) {
-    try {
-      paceConfig = JSON.parse(lessonSession.paceConfig);
-    } catch {
-      paceConfig = null;
-    }
-  }
+  const paceConfig = readStoredPaceConfig(lessonSession.paceConfig);
   const allowedSlides = Array.isArray(paceConfig?.allowedSlides)
     ? paceConfig?.allowedSlides?.filter((idx) => typeof idx === "number")
     : null;

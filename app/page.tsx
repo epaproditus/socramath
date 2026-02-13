@@ -40,7 +40,10 @@ type LessonState = {
     mode: "instructor" | "student";
     currentSlideIndex: number;
     isFrozen?: boolean;
-    paceConfig?: { allowedSlides?: number[] } | null;
+    paceConfig?: {
+      allowedSlides?: number[];
+      revealedBlockIdsBySlide?: Record<string, string[]>;
+    } | null;
     timerEndsAt?: string | null;
     timerRemainingSec?: number | null;
     timerRunning?: boolean;
