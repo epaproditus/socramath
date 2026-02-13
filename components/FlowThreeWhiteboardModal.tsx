@@ -99,7 +99,7 @@ export default function FlowThreeWhiteboardModal({
             setEditor(mounted);
             mounted.user.updateUserPreferences({ colorScheme: "light" });
             mounted.selectNone();
-            const shapeIds = mounted.getCurrentPageShapeIds();
+            const shapeIds = Array.from(mounted.getCurrentPageShapeIds());
             if (shapeIds.length > 0) {
               mounted.setSelectedShapes(shapeIds);
               mounted.zoomToSelection();
