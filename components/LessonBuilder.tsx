@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Upload, CheckCircle2, XCircle, RefreshCw, Trash2 } from "lucide-react";
+import { FEATURE_FLAGS } from "@/lib/config";
 
 type LessonRow = {
   id: string;
@@ -11,6 +12,9 @@ type LessonRow = {
   sourceFilename?: string | null;
 };
 
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
+
 export default function LessonBuilder() {
   const [lessons, setLessons] = useState<LessonRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -19,8 +23,15 @@ export default function LessonBuilder() {
   const [success, setSuccess] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [csvTitle, setCsvTitle] = useState("");
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvImporting, setCsvImporting] = useState(false);
 
   const canUpload = useMemo(() => !!file && !importing, [file, importing]);
+  const canUploadCsv = useMemo(
+    () => FEATURE_FLAGS.unifiedLessonCsvImport && !!csvFile && !csvImporting,
+    [csvFile, csvImporting]
+  );
 
   const loadLessons = async () => {
     setLoading(true);
@@ -29,8 +40,8 @@ export default function LessonBuilder() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setLessons(data || []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load lessons");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to load lessons"));
     } finally {
       setLoading(false);
     }
@@ -65,10 +76,42 @@ export default function LessonBuilder() {
       setTitle("");
       setFile(null);
       await loadLessons();
-    } catch (err: any) {
-      setError(err?.message || "Failed to import lesson");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to import lesson"));
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleCsvUpload = async () => {
+    if (!csvFile || !FEATURE_FLAGS.unifiedLessonCsvImport) return;
+    setCsvImporting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const form = new FormData();
+      form.append("file", csvFile);
+      if (csvTitle.trim()) form.append("title", csvTitle.trim());
+
+      const res = await fetch("/api/lesson-import-csv", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      const created = await res.json();
+      setSuccess(`Lesson created from CSV: ${created.title}`);
+      setCsvTitle("");
+      setCsvFile(null);
+      await loadLessons();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to import CSV lesson"));
+    } finally {
+      setCsvImporting(false);
     }
   };
 
@@ -83,8 +126,8 @@ export default function LessonBuilder() {
       });
       if (!res.ok) throw new Error(await res.text());
       await loadLessons();
-    } catch (err: any) {
-      setError(err?.message || "Failed to set active lesson");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to set active lesson"));
     } finally {
       setLoading(false);
     }
@@ -101,8 +144,8 @@ export default function LessonBuilder() {
       });
       if (!res.ok) throw new Error(await res.text());
       await loadLessons();
-    } catch (err: any) {
-      setError(err?.message || "Failed to delete lesson");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to delete lesson"));
     } finally {
       setLoading(false);
     }
@@ -172,6 +215,49 @@ export default function LessonBuilder() {
           </div>
         )}
       </div>
+
+      {FEATURE_FLAGS.unifiedLessonCsvImport && (
+        <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Import Unified Lesson From CSV</h2>
+            <p className="text-sm text-zinc-500">
+              Each CSV row becomes a slide with predefined blocks for prompt, response, and drawing.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+            <div className="space-y-3">
+              <label className="block text-sm font-medium">Lesson Title (optional)</label>
+              <input
+                type="text"
+                value={csvTitle}
+                onChange={(e) => setCsvTitle(e.target.value)}
+                placeholder="e.g. Unit 4 Review (CSV)"
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+              />
+              <label className="block text-sm font-medium">CSV File</label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                className="w-full text-sm"
+              />
+              {csvFile && (
+                <div className="text-xs text-zinc-500">Selected: {csvFile.name}</div>
+              )}
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleCsvUpload}
+                disabled={!canUploadCsv}
+                className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+              >
+                <Upload className="h-4 w-4" />
+                {csvImporting ? "Importing..." : "Create Lesson From CSV"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">

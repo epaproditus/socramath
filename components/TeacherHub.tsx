@@ -23,14 +23,14 @@ export default function TeacherHub() {
               <FileText className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-lg font-semibold">Test Review</div>
+              <div className="text-lg font-semibold">Test Review (Legacy)</div>
               <div className="text-sm text-zinc-500">
-                Import questions and run correction sessions.
+                Legacy correction workflow for existing sessions.
               </div>
             </div>
           </div>
           <div className="mt-6 flex items-center gap-2 text-sm font-semibold text-indigo-700">
-            Open Test Review <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+            Open Legacy Review <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
           </div>
         </Link>
 
@@ -43,9 +43,9 @@ export default function TeacherHub() {
               <BookOpen className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-lg font-semibold">Lesson Builder</div>
+              <div className="text-lg font-semibold">Lesson Builder (Unified)</div>
               <div className="text-sm text-zinc-500">
-                Upload a PDF and turn it into a lesson.
+                Build paced lessons from PDF or CSV with live controls.
               </div>
             </div>
           </div>
