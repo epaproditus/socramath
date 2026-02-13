@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, FileText, BookOpen, Settings } from "lucide-react";
+import { ArrowRight, FileText, BookOpen, Settings, MessageSquare } from "lucide-react";
 
 export default function TeacherHub() {
   return (
@@ -73,6 +73,26 @@ export default function TeacherHub() {
           <div className="mt-6 flex items-center gap-2 text-sm font-semibold text-zinc-700">
             Open Settings{" "}
             <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+          </div>
+        </Link>
+
+        <Link
+          href="/teacher/flow3"
+          className="group rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-emerald-50 p-3 text-emerald-700">
+              <MessageSquare className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-lg font-semibold">Flow 3 (Chat Kit)</div>
+              <div className="text-sm text-zinc-500">
+                Start fresh with a small tldraw-style chat + sketch prototype.
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 flex items-center gap-2 text-sm font-semibold text-emerald-700">
+            Open Flow 3 <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
           </div>
         </Link>
       </div>
